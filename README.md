@@ -72,8 +72,6 @@ signature_project/
 └── README.md
 ```
 
->  = thư mục/file được các script tự tạo ra, không cần tạo tay trước.
-
 ## 3. Sơ đồ pipeline
 
 ```

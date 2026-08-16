@@ -76,34 +76,34 @@ signature_project/
 
 ```
 ┌─────────────────┐     ┌──────────────┐     ┌──────────────────┐
-│  Ảnh chữ ký gốc  │ --> │ Tiền xử lý   │ --> │       EDA         │
-│  (scan/chụp)     │     │ (01)         │     │ (02)               │
+│  Ảnh chữ ký gốc │ --> │ Tiền xử lý   │ --> │       EDA        │
+│  (scan/chụp)    │     │ (01)         │     │       (02)       │
 └─────────────────┘     └──────────────┘     └──────────────────┘
                                                         │
                                                         ▼
 ┌─────────────────┐     ┌──────────────┐     ┌──────────────────┐
-│  Kiểm định       │ <-- │ Trích đặc    │ <-- │  Ảnh đã chuẩn hóa  │
-│  thống kê (04)   │     │ trưng (03)   │     │                    │
+│  Kiểm định      │ <-- │ Trích đặc    │ <-- │  Ảnh đã chuẩn hóa│
+│  thống kê (04)  │     │ trưng (03)   │     │                  │
 └─────────────────┘     └──────────────┘     └──────────────────┘
         │
         ▼ 
 ┌───────────────────────────────────────────────────────────────┐
-│         05_cv_pipeline.py — k-fold CV ĐÚNG CHUẨN                │
-│  Mỗi fold: feature selection CHỈ trên training fold             │
-│  -> tránh data leakage -> kết quả đánh giá đáng tin cậy          │
+│         05_cv_pipeline.py — k-fold CV ĐÚNG CHUẨN              │
+│  Mỗi fold: feature selection CHỈ trên training fold           │
+│  -> tránh data leakage -> kết quả đánh giá đáng tin cậy       │
 └───────────────────────────────────────────────────────────────┘
                                                         │
                                                         ▼
                                         ┌──────────────────────┐
-                                        │ 06_train_final_model  │
-                                        │ (train trên toàn bộ    │
-                                        │  CEDAR, lưu model)     │
+                                        │ 06_train_final_model │
+                                        │ (train trên toàn bộ  │
+                                        │  CEDAR, lưu model)   │
                                         └──────────────────────┘
                                                         │
                                                         ▼
                                         ┌──────────────────────┐
-                                        │        app.py         │
-                                        │   Web demo tương tác   │
+                                        │        app.py        │
+                                        │   Web demo tương tác │
                                         └──────────────────────┘
 ```
 

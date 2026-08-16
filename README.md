@@ -19,15 +19,14 @@
 - [7. Phương pháp luận](#7-phương-pháp-luận)
 - [8. Web app demo](#8-web-app-demo)
 - [9. Vai trò của ICDAR SigComp 2011](#9-vai-trò-của-icdar-sigcomp-2011)
-- [10. Lộ trình tiếp theo](#10-lộ-trình-tiếp-theo)
 
 ---
 
 ## 1. Giới thiệu
 
-Ngân hàng vẫn dùng chữ ký viết tay để xác thực trên séc, hợp đồng vay, ủy nhiệm chi. Xác thực thủ công bằng mắt tốn thời gian và dễ sai sót, đặc biệt với giả mạo có kỹ năng (skilled forgery).
+Ngân hàng vẫn dùng chữ ký viết tay để xác thực trên séc, hợp đồng vay, ủy nhiệm chi. Xác thực thủ công bằng mắt tốn thời gian và dễ sai sót, đặc biệt với giả mạo có kỹ năng.
 
-Dự án xây dựng hệ thống tự động phân loại **chữ ký thật / chữ ký giả** từ ảnh, theo đúng quy trình khoa học dữ liệu: phân tích khám phá dữ liệu (EDA) → trích đặc trưng có cơ sở thống kê → kiểm định giả thuyết → huấn luyện & đánh giá mô hình bằng cross-validation không rò rỉ dữ liệu → demo ứng dụng thực tế.
+Dự án xây dựng hệ thống tự động phân loại **chữ ký thật / chữ ký giả** từ ảnh, theo đúng quy trình khoa học dữ liệu: phân tích khám phá dữ liệu -> trích đặc trưng có cơ sở thống kê -> kiểm định giả thuyết -> huấn luyện & đánh giá mô hình bằng cross-validation không rò rỉ dữ liệu -> demo ứng dụng thực tế.
 
 | | |
 |---|---|
@@ -43,33 +42,32 @@ Dự án xây dựng hệ thống tự động phân loại **chữ ký thật /
 signature_project/
 │
 ├── data/
-│   ├── raw/                       # Dataset gốc (bạn tự thêm vào, xem mục 5)
+│   ├── raw/                       # Dataset gốc
 │   │   ├── cedar/
 │   │   │   ├── full_org/          # Chữ ký thật
 │   │   │   └── full_forg/         # Chữ ký giả
-│   │   └── icdar/                 # (tùy chọn, dùng sau)
+│   │   └── icdar/              
 │   └── processed/                 # Tự sinh ra sau khi chạy pipeline
 │       ├── labels.csv
 │       ├── labels_with_eda.csv
 │       └── features.csv
-│
-├── notebooks/                     # Notebook thử nghiệm nhanh (không bắt buộc)
+│                   
 │
 ├── results/
-│   ├── figures/                   # Biểu đồ EDA (tự sinh ra)
-│   └── tables/                    # Kết quả CV, kiểm định thống kê (tự sinh ra)
+│   ├── figures/                   # Biểu đồ EDA
+│   └── tables/                    # Kết quả CV, kiểm định thống kê
 │
 ├── src/
 │   ├── 01_preprocessing.py        # Nhị phân hóa, crop, resize ảnh
 │   ├── 02_eda.py                  # Phân tích khám phá dữ liệu
 │   ├── 03_features.py             # Trích Hu Moments, GLCM, baseline ratio
-│   ├── 04_stats_tests.py          # Mann-Whitney U (tổng quan, chỉ tham khảo)
+│   ├── 04_stats_tests.py          # Mann-Whitney U
 │   ├── 05_cv_pipeline.py          # Train + đánh giá bằng k-fold CV chuẩn
 │   └── 06_train_final_model.py    # Train model cuối, lưu lại cho web app
 │
-├── model_artifacts/                # model.joblib, scaler.joblib... (tự sinh ra)
+├── model_artifacts/                # model.joblib, scaler.joblib...
 │
-├── app.py                          # Web demo (Streamlit)
+├── app.py                          # Web demo
 ├── requirements.txt
 └── README.md
 ```
@@ -90,7 +88,7 @@ signature_project/
 │  thống kê (04)   │     │ trưng (03)   │     │                    │
 └─────────────────┘     └──────────────┘     └──────────────────┘
         │
-        ▼ (chỉ tham khảo, KHÔNG dùng trực tiếp cho model)
+        ▼ 
 ┌───────────────────────────────────────────────────────────────┐
 │         05_cv_pipeline.py — k-fold CV ĐÚNG CHUẨN                │
 │  Mỗi fold: feature selection CHỈ trên training fold             │
@@ -106,7 +104,7 @@ signature_project/
                                                         │
                                                         ▼
                                         ┌──────────────────────┐
-                                        │   app.py (Streamlit)   │
+                                        │        app.py         │
                                         │   Web demo tương tác   │
                                         └──────────────────────┘
 ```
@@ -114,7 +112,7 @@ signature_project/
 ## 4. Cài đặt
 
 ```bash
-# Tạo môi trường ảo (khuyến khích)
+# Tạo môi trường ảo
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 
@@ -171,33 +169,9 @@ streamlit run app.py                  # -> http://localhost:8501
 
 ## 8. Web app demo
 
-Tải lên 1 ảnh chữ ký → xem ảnh trước/sau tiền xử lý → nhận dự đoán thật/giả kèm % độ tin cậy.
-
-**Chạy local:**
-```bash
-streamlit run app.py
-```
-
-**Deploy public (miễn phí, qua Streamlit Community Cloud):**
-1. Đẩy `app.py`, `src/`, `model_artifacts/` lên GitHub (**không** đẩy `data/raw`, `data/processed`)
-2. Vào [share.streamlit.io](https://share.streamlit.io), đăng nhập GitHub, chọn repo + file `app.py`, nhấn Deploy
-3. Nhận link công khai dạng `https://<tên-app>.streamlit.app`
-
 ## 9. Vai trò của ICDAR SigComp 2011
 
 ICDAR **không** tham gia training hay feature selection cùng CEDAR. Dự kiến chỉ dùng làm tập test độc lập sau khi đã có model cuối, để trả lời: *"Mô hình học từ CEDAR (Mỹ) có tổng quát tốt sang chữ ký nguồn khác (Hà Lan/Trung Quốc) không?"*
 
 - Hiệu năng trên ICDAR gần với CV trên CEDAR → mô hình tổng quát tốt
 - Giảm nhiều → mô hình overfit vào đặc thù CEDAR, cần nêu rõ trong phần "Hạn chế của đề tài"
-
-## 10. Lộ trình tiếp theo
-
-- [x] Tiền xử lý ảnh
-- [x] EDA
-- [x] Feature engineering
-- [x] Kiểm định thống kê
-- [x] CV pipeline không rò rỉ dữ liệu
-- [x] Train model cuối + web demo
-- [ ] Script xử lý & external test trên ICDAR SigComp 2011 (`07_external_test.py`)
-- [ ] Deploy web demo public
-- [ ] Viết báo cáo tổng kết

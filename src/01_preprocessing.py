@@ -6,13 +6,13 @@ from pathlib import Path
 
 RAW_DIR = Path("data/raw/cedar")
 OUT_DIR = Path("data/processed")
-IMG_SIZE = (256, 256) 
+IMG_SIZE = (256, 256) # kích thước chuẩn hóa
 
 
 def load_and_binarize(path):
     img = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
     if img is None:
-        raise ValueError(f"Không đọc được ảnh: {path}")
+        raise ValueError(f"Không đọc được ảnh: {path}") # Otsu threshold -> nhị phân hóa
     _, binary = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     return binary
 
@@ -38,7 +38,8 @@ def process_one(path, label, writer_id, out_dir):
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     records = []
-
+    # CEDAR: full_org/original_{writer}_{sample}.png -> genuine
+    #        full_forg/forgeries_{writer}_{sample}.png -> forged (skilled)
     org_dir = RAW_DIR / "full_org"
     forg_dir = RAW_DIR / "full_forg"
 
@@ -48,7 +49,7 @@ def main():
         return
 
     for path in sorted(org_dir.glob("*.png")):
-        writer_id = path.stem.split("_")[-2] 
+        writer_id = path.stem.split("_")[-2] # tùy theo format tên file thật, chỉnh lại nếu cần
         out_name = process_one(path, "genuine", writer_id, OUT_DIR)
         records.append({"filename": out_name, "writer_id": writer_id, "label": "genuine"})
 

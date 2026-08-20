@@ -1,0 +1,19 @@
+{
+  "best_model": "RF_400",
+  "selected_features": [
+    "hu_0",
+    "hu_1",
+    "hu_2",
+    "hu_3",
+    "hu_4",
+    "hu_5",
+    "hu_6",
+    "glcm_contrast",
+    "glcm_homogeneity",
+    "glcm_energy",
+    "glcm_correlation",
+    "baseline_ratio"
+  ],
+  "threshold": 0.5468912093337598,
+  "val_EER": 0.23276862545289856
+}

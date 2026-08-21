@@ -8,3 +8,4 @@ opencv-python
 scipy
 streamlit
 joblib
+torch

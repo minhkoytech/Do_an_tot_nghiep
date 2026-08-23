@@ -9,5 +9,5 @@
   "threshold_FAR_target": 0.2982372045516968,
   "target_FAR": 0.1,
   "achieved_FAR_on_val": 0.1004,
-  "total_train_time_minutes": 82.17822366952896
+  "total_train_time_minutes": 93.71680972178777
 }

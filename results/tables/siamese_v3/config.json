@@ -2,9 +2,9 @@
   "img_size": 224,
   "batch_size": 128,
   "lr": 1e-05,
-  "epochs_run": 64,
+  "epochs_run": 82,
   "n_train_pairs": 12000,
-  "val_EER": 0.23284086221122113,
+  "val_EER": 0.07327764026402639,
   "achieved_FAR_on_val": 0.10024752475247525,
-  "total_train_time_minutes": 1173.1355941613515
+  "total_train_time_minutes": 1574.663264878591
 }

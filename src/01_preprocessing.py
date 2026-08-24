@@ -59,11 +59,23 @@ def pad_to_square(img, pad_value=255):
     return cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=pad_value)
 
 
-def enhance_contrast(img):
-    """CLAHE — tăng tương phản cục bộ, giảm ảnh hưởng của ánh sáng không đều lúc scan,
-    làm nét mực rõ ràng hơn mà vẫn giữ thông tin sắc độ xám (không nhị phân hóa)."""
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    return clahe.apply(img)
+def isolate_signature_ink(gray_img, pad_value=255):
+    """QUAN TRỌNG (sửa sau khi phát hiện rủi ro rò rỉ dữ liệu): chỉ giữ lại
+    thông tin xám (độ đậm nhạt) BÊN TRONG vùng nét chữ ký, ép toàn bộ nền
+    xung quanh về giá trị đồng nhất (trắng).
+
+    Lý do: nếu giữ nguyên nền gốc, các chi tiết như vết ố giấy, nhiễu máy
+    scan có thể vô tình trở thành "manh mối" giúp model nhận diện đúng
+    writer qua đặc điểm TỜ GIẤY/ĐỢT SCAN thay vì qua NÉT CHỮ thật — đặc biệt
+    rủi ro với CEDAR vì chữ ký giả của 1 người thường được scan cùng đợt với
+    chữ ký thật của người đó. Ép nền đồng nhất loại bỏ hoàn toàn rủi ro này,
+    trong khi vẫn giữ được lợi ích chính (độ đậm nhạt nét mực) của việc
+    không nhị phân hóa cứng.
+    """
+    _, mask = cv2.threshold(gray_img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    result = np.full_like(gray_img, pad_value)
+    result[mask > 0] = gray_img[mask > 0]
+    return result
 
 
 def process_one(path, label, writer_id, out_dir):
@@ -72,10 +84,10 @@ def process_one(path, label, writer_id, out_dir):
     cropped = gray[y0:y1, x0:x1]
     squared = pad_to_square(cropped, pad_value=255)
     resized = cv2.resize(squared, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_AREA)
-    enhanced = enhance_contrast(resized)
+    isolated = isolate_signature_ink(resized, pad_value=255)  # <- ép nền đồng nhất, chỉ giữ xám trong nét chữ
 
     out_name = f"{writer_id}_{label}_{path.stem}.png"
-    cv2.imwrite(str(out_dir / out_name), enhanced)
+    cv2.imwrite(str(out_dir / out_name), isolated)
     return out_name
 
 

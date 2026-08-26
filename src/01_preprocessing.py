@@ -1,23 +1,22 @@
 """
-Bước 1 — Tiền xử lý ảnh chữ ký (ĐÃ SỬA — v2)
+Bước 1 — Tiền xử lý ảnh chữ ký (v3 — ĐÃ SỬA sau khi phát hiện rò rỉ dữ liệu)
 
-3 THAY ĐỔI QUAN TRỌNG so với bản đầu (phát hiện khi soát lại pipeline):
-
-1. GIỮ ẢNH XÁM (grayscale), KHÔNG nhị phân hóa cứng khi lưu ra.
-   Lý do: nhị phân hóa (chỉ còn đen/trắng) làm mất thông tin độ đậm nhạt của
-   nét mực (liên quan lực nhấn bút) — đây chính là thông tin GLCM (kết cấu)
-   cần để đo, và cũng là thông tin hữu ích để CNN tự học. Nhị phân hóa CHỈ
-   dùng nội bộ để tìm bounding box (cắt vùng chữ ký), không dùng để lưu ảnh
-   cuối cùng.
-
-2. GIỮ TỶ LỆ KHUNG HÌNH khi resize (pad về hình vuông trước khi resize),
-   KHÔNG ép chữ ký dài/dẹt thành hình vuông trực tiếp.
-   Lý do: resize ép tỷ lệ sẽ làm méo hình dạng chữ ký, ảnh hưởng trực tiếp
-   đến Hu Moments (đặc trưng hình học) và cả CNN.
-
-3. Chuẩn hóa nền về trắng đồng nhất, làm rõ tương phản nét chữ so với nền
-   (CLAHE - Contrast Limited Adaptive Histogram Equalization) trước khi lưu,
-   giúp giảm ảnh hưởng của việc scan ở điều kiện ánh sáng không đều.
+LỊCH SỬ SỬA LỖI:
+- v1: nhị phân hóa cứng khi lưu -> mất hết thông tin độ đậm nhạt (dùng để
+  tính GLCM/CNN học được, nhưng cũng thiếu thông tin).
+- v2: giữ ảnh xám + CLAHE toàn ảnh -> RÒ RỈ nghiêm trọng do CLAHE khuếch đại
+  nhiễu nền/giấy, khiến model học "tắt" qua đặc điểm scan thay vì chữ ký.
+- v2.5: ép nền về trắng đồng nhất, giữ xám trong vùng chữ ký -> RÒ RỈ vẫn
+  còn (đã xác nhận qua chẩn đoán): ink_intensity_mean/std của vùng chữ ký
+  có AUC diff 0.83-0.86 khi phân biệt genuine/forgery MỘT MÌNH — cho thấy
+  CEDAR có khác biệt ĐỘ ĐẬM MỰC MANG TÍNH HỆ THỐNG giữa chữ ký thật và giả
+  (khả năng do loại bút/lực nhấn khác nhau khi thu thập dữ liệu), không
+  liên quan đến hình dạng nét chữ thật.
+- v3 (bản này): CHUẨN HÓA độ đậm mực trong vùng chữ ký về cùng 1 phân phối
+  (mean/std cố định) cho MỌI ảnh — loại bỏ mức đậm trung bình toàn cục (có
+  thể bị lợi dụng làm shortcut), trong khi vẫn giữ biến thiên cục bộ trong
+  từng ảnh (là thông tin hợp lệ, ví dụ độ đậm nhạt do tốc độ viết thay đổi
+  giữa các đoạn nét).
 """
 import cv2
 import numpy as np
@@ -26,7 +25,9 @@ from pathlib import Path
 
 RAW_DIR = Path("data/raw/cedar")
 OUT_DIR = Path("data/processed")
-IMG_SIZE = 256  # kích thước chuẩn hóa (hình vuông sau khi pad)
+IMG_SIZE = 256
+TARGET_INK_MEAN = 120
+TARGET_INK_STD = 35
 
 
 def load_grayscale(path):
@@ -37,7 +38,6 @@ def load_grayscale(path):
 
 
 def find_signature_bbox(gray_img, margin=10):
-    """Nhị phân hóa CHỈ để tìm vùng chữ ký (bounding box), không dùng để lưu."""
     _, binary = cv2.threshold(gray_img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     ys, xs = np.where(binary > 0)
     if len(xs) == 0:
@@ -48,8 +48,6 @@ def find_signature_bbox(gray_img, margin=10):
 
 
 def pad_to_square(img, pad_value=255):
-    """Đệm thêm viền (màu nền trắng) để ảnh thành hình vuông TRƯỚC khi resize,
-    tránh resize ép làm méo tỷ lệ khung hình gốc của chữ ký."""
     h, w = img.shape
     size = max(h, w)
     top = (size - h) // 2
@@ -59,22 +57,20 @@ def pad_to_square(img, pad_value=255):
     return cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=pad_value)
 
 
-def isolate_signature_ink(gray_img, pad_value=255):
-    """QUAN TRỌNG (sửa sau khi phát hiện rủi ro rò rỉ dữ liệu): chỉ giữ lại
-    thông tin xám (độ đậm nhạt) BÊN TRONG vùng nét chữ ký, ép toàn bộ nền
-    xung quanh về giá trị đồng nhất (trắng).
-
-    Lý do: nếu giữ nguyên nền gốc, các chi tiết như vết ố giấy, nhiễu máy
-    scan có thể vô tình trở thành "manh mối" giúp model nhận diện đúng
-    writer qua đặc điểm TỜ GIẤY/ĐỢT SCAN thay vì qua NÉT CHỮ thật — đặc biệt
-    rủi ro với CEDAR vì chữ ký giả của 1 người thường được scan cùng đợt với
-    chữ ký thật của người đó. Ép nền đồng nhất loại bỏ hoàn toàn rủi ro này,
-    trong khi vẫn giữ được lợi ích chính (độ đậm nhạt nét mực) của việc
-    không nhị phân hóa cứng.
-    """
-    _, mask = cv2.threshold(gray_img, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+def normalize_ink_intensity(gray_img, mask, target_mean=TARGET_INK_MEAN, target_std=TARGET_INK_STD, pad_value=255):
+    """Chuẩn hóa độ đậm nhạt TRONG VÙNG NÉT CHỮ về cùng 1 phân phối
+    (mean/std cố định) cho MỌI ảnh — loại bỏ khác biệt độ đậm mực HỆ THỐNG
+    giữa các ảnh, chỉ giữ lại biến thiên TƯƠNG ĐỐI trong từng ảnh."""
+    ink_pixels = gray_img[mask > 0].astype(np.float64)
     result = np.full_like(gray_img, pad_value)
-    result[mask > 0] = gray_img[mask > 0]
+
+    if len(ink_pixels) == 0 or ink_pixels.std() < 1e-6:
+        return result
+
+    normalized = (ink_pixels - ink_pixels.mean()) / (ink_pixels.std() + 1e-6)
+    normalized = normalized * target_std + target_mean
+    normalized = np.clip(normalized, 0, 255)
+    result[mask > 0] = normalized.astype(np.uint8)
     return result
 
 
@@ -84,10 +80,12 @@ def process_one(path, label, writer_id, out_dir):
     cropped = gray[y0:y1, x0:x1]
     squared = pad_to_square(cropped, pad_value=255)
     resized = cv2.resize(squared, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_AREA)
-    isolated = isolate_signature_ink(resized, pad_value=255)  # <- ép nền đồng nhất, chỉ giữ xám trong nét chữ
+
+    _, mask = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    final = normalize_ink_intensity(resized, mask)
 
     out_name = f"{writer_id}_{label}_{path.stem}.png"
-    cv2.imwrite(str(out_dir / out_name), isolated)
+    cv2.imwrite(str(out_dir / out_name), final)
     return out_name
 
 
@@ -100,7 +98,6 @@ def main():
 
     if not org_dir.exists() or not forg_dir.exists():
         print(f"[LỖI] Không tìm thấy {org_dir} hoặc {forg_dir}.")
-        print("Xem README.md để biết cách tải và đặt dữ liệu đúng vị trí.")
         return
 
     for path in sorted(org_dir.glob("*.png")):
@@ -115,11 +112,10 @@ def main():
 
     df = pd.DataFrame(records)
     df.to_csv(OUT_DIR / "labels.csv", index=False)
-    print(f"Đã xử lý {len(df)} ảnh (GIỮ SẮC ĐỘ XÁM, giữ tỷ lệ khung hình). Nhãn lưu tại {OUT_DIR / 'labels.csv'}")
+    print(f"Đã xử lý {len(df)} ảnh (đã chuẩn hóa độ đậm mực, loại artifact). Nhãn lưu tại {OUT_DIR / 'labels.csv'}")
     print(df["label"].value_counts())
-    print("\n⚠️  Ảnh giờ là GRAYSCALE, không còn nhị phân đen/trắng như bản trước.")
-    print("    Cần chạy lại 03_features.py để tính lại đặc trưng trên ảnh mới.")
-    print("    09_siamese_network.py cũng cần chạy lại vì ảnh đầu vào đã đổi.")
+    print("\n⚠️  Cần chạy lại: 03_features.py, sau đó diagnose_leakage_v2.py để")
+    print("    XÁC NHẬN đã hết rò rỉ, rồi mới chạy 08 và 09.")
 
 
 if __name__ == "__main__":

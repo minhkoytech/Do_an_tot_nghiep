@@ -1,15 +1,7 @@
 """
-Bước 8 — Pairwise Classical ML Baseline, chạy qua NHIỀU writer split
-
-(Reference, Query) -> |features_ref - features_query| -> RF/SVM -> Match/Non-match
-
-Khác bản trước: thay vì chạy 1 lần trên 1 cách chia writer, giờ LẶP QUA
-n_splits cách chia khác nhau (đã tạo ở 07_writer_split.py), rồi báo cáo
-kết quả dạng "trung bình ± độ lệch chuẩn" — đáng tin cậy hơn nhiều so với
-1 lần chạy, vì CEDAR chỉ có 55 writer (dễ bị phương sai cao).
-
-Có khả năng RESUME: nếu chạy dở rồi dừng, lần sau chạy lại sẽ bỏ qua các
-split đã có kết quả, chỉ chạy tiếp phần còn thiếu.
+Bước 8 — Pairwise Classical ML Baseline (Hu Moments, GLCM, baseline_ratio)
+(Reference, Query) -> |feature_ref - feature_query| -> RF/SVM -> Match/Non-match
+Chạy qua 5 writer split, báo cáo trung bình ± độ lệch chuẩn. Có resume.
 """
 import json
 import numpy as np
@@ -33,21 +25,17 @@ TARGET_FAR = 0.10
 def build_pairs_for_training(df_writers, feature_cols, rng):
     rows = []
     writer_ids = df_writers["writer_id"].unique()
-
     for wid in writer_ids:
         sub = df_writers[df_writers["writer_id"] == wid]
         genuine = sub[sub["label"] == "genuine"]
         forged = sub[sub["label"] == "skilled_forgery"]
-
         for i, j in combinations(genuine.index, 2):
             diff = np.abs(df_writers.loc[i, feature_cols].values - df_writers.loc[j, feature_cols].values)
             rows.append({"diff": diff, "y": 1, "pair_type": "positive", "writer_id": wid})
-
         for i in genuine.index:
             for j in forged.index:
                 diff = np.abs(df_writers.loc[i, feature_cols].values - df_writers.loc[j, feature_cols].values)
                 rows.append({"diff": diff, "y": 0, "pair_type": "negative_skilled", "writer_id": wid})
-
     n_random_needed = sum(1 for r in rows if r["pair_type"] == "negative_skilled")
     genuine_all = df_writers[df_writers["label"] == "genuine"]
     for _ in range(n_random_needed):
@@ -56,7 +44,6 @@ def build_pairs_for_training(df_writers, feature_cols, rng):
         s2 = genuine_all[genuine_all["writer_id"] == w2].sample(1, random_state=int(rng.integers(1e9))).index[0]
         diff = np.abs(df_writers.loc[s1, feature_cols].values - df_writers.loc[s2, feature_cols].values)
         rows.append({"diff": diff, "y": 0, "pair_type": "negative_random", "writer_id": f"{w1}-{w2}"})
-
     return rows
 
 
@@ -68,17 +55,14 @@ def build_pairs_for_test(df_writers, feature_cols, seed):
         forged = sub[sub["label"] == "skilled_forgery"]
         if len(genuine) < 2:
             continue
-
         ref_idx = genuine.sample(1, random_state=seed).index[0]
         query_genuine = genuine.drop(ref_idx)
-
         for qi in query_genuine.index:
             diff = np.abs(df_writers.loc[ref_idx, feature_cols].values - df_writers.loc[qi, feature_cols].values)
             rows.append({"diff": diff, "y": 1, "pair_type": "positive", "writer_id": wid})
         for qi in forged.index:
             diff = np.abs(df_writers.loc[ref_idx, feature_cols].values - df_writers.loc[qi, feature_cols].values)
             rows.append({"diff": diff, "y": 0, "pair_type": "negative_skilled", "writer_id": wid})
-
     return rows
 
 
@@ -105,7 +89,6 @@ def select_diff_features_train_only(X_train, y_train, feature_cols, alpha=ALPHA)
 def run_one_split(split, features, feature_cols):
     seed = split["seed"]
     rng = np.random.default_rng(seed)
-
     train_df = features[features["writer_id"].isin(split["train_writers"])].reset_index(drop=True)
     val_df = features[features["writer_id"].isin(split["val_writers"])].reset_index(drop=True)
     test_df = features[features["writer_id"].isin(split["test_writers"])].reset_index(drop=True)
@@ -167,20 +150,15 @@ def main():
     feature_cols = [c for c in features.columns if c not in ("filename", "writer_id", "label")]
 
     with open(PROC_DIR / "writer_splits.json", encoding="utf-8") as f:
-        splits_data = json.load(f)
-    splits = splits_data["splits"]
+        splits = json.load(f)["splits"]
 
-    all_results = []
-    all_per_writer = []
-
+    all_results, all_per_writer = [], []
     for split in splits:
         sid = split["split_id"]
         result_path = RESULTS_DIR / f"split_{sid}_results.csv"
-
         if result_path.exists():
-            print(f"[Split {sid}] Đã có kết quả từ trước, bỏ qua (resume).")
-            df_existing = pd.read_csv(result_path)
-            all_results.append(df_existing)
+            print(f"[Split {sid}] Đã có kết quả, bỏ qua (resume).")
+            all_results.append(pd.read_csv(result_path))
             pw_path = RESULTS_DIR / f"split_{sid}_per_writer.csv"
             if pw_path.exists():
                 all_per_writer.append(pd.read_csv(pw_path))
@@ -195,7 +173,6 @@ def main():
         df_result.to_csv(result_path, index=False)
         per_writer_df["split_id"] = sid
         per_writer_df.to_csv(RESULTS_DIR / f"split_{sid}_per_writer.csv", index=False)
-
         all_results.append(df_result)
         all_per_writer.append(per_writer_df)
 
@@ -203,19 +180,16 @@ def main():
             print(f"  [{thr_name}] Accuracy={r['accuracy']:.4f}  FAR={r['FAR']:.4f}  "
                   f"FRR={r['FRR']:.4f}  ROC_AUC={r['ROC_AUC']:.4f}")
 
-    # ---- Tổng hợp qua tất cả split: trung bình ± độ lệch chuẩn ----
     combined = pd.concat(all_results, ignore_index=True)
     summary = combined.groupby("threshold_name")[["accuracy", "FAR", "FRR", "ROC_AUC"]].agg(["mean", "std"])
     summary.to_csv(RESULTS_DIR / "summary_mean_std.csv")
-
     print("\n" + "=" * 70)
     print(f"TỔNG HỢP QUA {len(splits)} SPLIT — Pairwise Classical ML Baseline")
     print("=" * 70)
     print(summary.to_string())
-
     combined.to_csv(RESULTS_DIR / "all_splits_results.csv", index=False)
     pd.concat(all_per_writer, ignore_index=True).to_csv(RESULTS_DIR / "all_splits_per_writer.csv", index=False)
-    print(f"\nĐã lưu toàn bộ kết quả vào {RESULTS_DIR}/")
+    print(f"\nĐã lưu vào {RESULTS_DIR}/")
 
 
 if __name__ == "__main__":

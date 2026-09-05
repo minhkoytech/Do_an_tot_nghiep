@@ -6,7 +6,6 @@ scikit-learn
 scikit-image
 opencv-python
 scipy
-streamlit
 joblib
 torch
 torchvision

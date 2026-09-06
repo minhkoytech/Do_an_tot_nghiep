@@ -1,0 +1,26 @@
+{
+  "selected_features": [
+    "glcm_correlation",
+    "hu_1",
+    "hu_2",
+    "hu_3",
+    "hu_4",
+    "aspect_ratio",
+    "pixel_density",
+    "glcm_homogeneity",
+    "glcm_energy",
+    "num_crossings",
+    "baseline_ratio"
+  ],
+  "rf_params": {
+    "n_estimators": 200,
+    "max_depth": null
+  },
+  "rf_threshold": 0.46,
+  "svm_params": {
+    "C": 1,
+    "kernel": "rbf",
+    "gamma": "scale"
+  },
+  "svm_threshold": -0.10347589255230494
+}

@@ -1,0 +1,4 @@
+model,pair_type,n,FAR,FRR
+siamese,skilled_forgery,400,0.4375,
+siamese,random_forgery,200,0.245,
+siamese,genuine_genuine,400,,0.1475

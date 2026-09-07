@@ -1,3 +1,63 @@
+"""
+06_siamese_network.py
+----------------------
+Siamese Network (CNN backbone + Contrastive Loss) - "Huong tiep can de
+xuat chinh" trong de cuong (Buoc 5).
+
+Kien truc:
+    Anh reference va anh query duoc dua qua CUNG MOT CNN (shared weights)
+    de tao ra 2 vector embedding. Khoang cach Euclidean giua 2 embedding
+    duoc dung de quyet dinh match/non-match - CUNG FORMULATION voi
+    Pairwise Classical ML baseline o 05_pairwise_baseline.py:
+        (Reference, Query) -> Distance -> Match/Non-match
+    Nho vay so sanh Siamese vs Pairwise RF/SVM la cong bang (dung gop y
+    so 4 cua GVHD) - cung writer split, cung dinh nghia pair, cung cach
+    danh gia.
+
+Contrastive Loss (Hadsell et al.):
+    L = (1-Y) * 0.5 * D^2  +  Y * 0.5 * max(0, margin - D)^2
+    trong do Y = 1 neu KHONG khop (non-match), Y = 0 neu khop (match).
+    Luu y: label trong pairs_*.csv dinh nghia NGUOC lai (label=1 la
+    match), nen Y = 1 - label khi tinh loss.
+    Y cua cong thuc: cap giong nhau (match) -> D cang nho cang tot (ep
+    ve 0). Cap khac nhau (non-match) -> D cang lon cang tot, nhung chi
+    can lon hon margin la du (khong ep vo cuc).
+
+Ky luat train/val/test (giong het 05_pairwise_baseline.py):
+    - Huan luyen tren train, EARLY STOPPING dua tren EER cua VAL (khong
+      phai chi dua tren validation loss - EER moi la chi so thuc su
+      quan tam trong bai toan xac thuc).
+    - Threshold quyet dinh (EER) duoc CHON va CO DINH tren VAL.
+    - Test set CHI danh gia DUY NHAT MOT LAN sau khi model + threshold
+      da co dinh.
+
+Sau khi danh gia Siamese tren test, script se TU DONG load lai RF/SVM
+da luu o 05_pairwise_baseline.py (model_artifacts/) va tinh lai diem tren
+CUNG test set, tao ra MOT bang so sanh + MOT bieu do ROC chung cho ca 3
+model - day la ket qua so sanh Classical ML vs Deep Learning ma GVHD yeu
+cau o gop y so 4.
+
+Output:
+    model_artifacts/siamese_best.pt          (trong so model tot nhat theo EER val)
+    model_artifacts/siamese_threshold.json
+    results/tables/siamese_test_summary.csv
+    results/tables/siamese_per_pairtype.csv
+    results/tables/siamese_per_writer.csv
+    results/tables/final_model_comparison.csv        (RF vs SVM vs Siamese)
+    results/figures/siamese_training_curve.png
+    results/figures/final_model_comparison_roc.png   (ROC 3 model tren cung 1 hinh)
+
+Cach dung (khong can tham so, path da khop san):
+    cd src
+    python 06_siamese_network.py
+
+Luu y ve thoi gian chay: voi CEDAR day du (~3500 train pairs, anh
+220x155), moi epoch tren CPU mat khoang vai chuc giay - vai phut, tong
+thoi gian huan luyen (mac dinh 30 epoch, early stopping) thuong duoi
+30-45 phut tren CPU. Neu co GPU NVIDIA, script se TU DONG dung GPU
+(khong can chinh gi them).
+"""
+
 import argparse
 import json
 import re
@@ -49,16 +109,40 @@ np.random.seed(RANDOM_SEED)
 # Dataset: doc cap anh truc tiep tu pairs_*.csv
 # ---------------------------------------------------------------------------
 class SignaturePairDataset(Dataset):
-    def __init__(self, pairs_df: pd.DataFrame):
+    """
+    Neu augment=True (chi dung cho TRAIN), moi anh se duoc xoay + dich
+    chuyen ngau nhien nhe (doc lap giua reference va query) truoc khi
+    dua vao model. Muc dich: chong overfitting - neu khong augment, CNN
+    de "hoc thuoc" vi tri/goc nghieng chinh xac cua tung mau chu ky
+    trong tap train (chi ~35 writer, ~3500 cap) thay vi hoc dac trung
+    hinh dang tong quat. Augmentation KHONG ap dung cho val/test vi do
+    la du lieu dung de danh gia, phai giu nguyen.
+    """
+
+    def __init__(self, pairs_df: pd.DataFrame, augment: bool = False):
         self.pairs_df = pairs_df.reset_index(drop=True)
+        self.augment = augment
 
     def __len__(self):
         return len(self.pairs_df)
+
+    def _augment_image(self, img: np.ndarray) -> np.ndarray:
+        """Xoay ngau nhien nho (+-8 do) + dich chuyen ngau nhien nho (+-8 pixel)."""
+        h, w = img.shape
+        angle = np.random.uniform(-8, 8)
+        tx = np.random.randint(-8, 9)
+        ty = np.random.randint(-8, 9)
+        matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+        matrix[0, 2] += tx
+        matrix[1, 2] += ty
+        return cv2.warpAffine(img, matrix, (w, h), borderValue=0)
 
     def _load_image(self, path: str) -> torch.Tensor:
         img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
         if img is None:
             raise FileNotFoundError(f"Khong doc duoc anh: {path}")
+        if self.augment:
+            img = self._augment_image(img)
         img = img.astype(np.float32) / 255.0  # chuan hoa ve [0, 1]
         return torch.from_numpy(img).unsqueeze(0)  # shape (1, H, W)
 
@@ -87,7 +171,7 @@ class EmbeddingCNN(nn.Module):
     lop conv/pool truoc do).
     """
 
-    def __init__(self, embedding_dim=64):
+    def __init__(self, embedding_dim=64, dropout=0.5):
         super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=5, padding=2), nn.ReLU(), nn.MaxPool2d(2),    # -> 32 x 77 x 110
@@ -99,7 +183,7 @@ class EmbeddingCNN(nn.Module):
         flat_dim = 128 * 4 * 4
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(flat_dim, 256), nn.ReLU(), nn.Dropout(0.3),
+            nn.Linear(flat_dim, 256), nn.ReLU(), nn.Dropout(dropout),
             nn.Linear(256, embedding_dim),
         )
 
@@ -110,9 +194,9 @@ class EmbeddingCNN(nn.Module):
 class SiameseNetwork(nn.Module):
     """Boc 2 nhanh CNN dung chung trong so (Siamese) + tinh khoang cach Euclidean."""
 
-    def __init__(self, embedding_dim=64):
+    def __init__(self, embedding_dim=64, dropout=0.5):
         super().__init__()
-        self.embedding_net = EmbeddingCNN(embedding_dim)
+        self.embedding_net = EmbeddingCNN(embedding_dim, dropout)
 
     def forward(self, img1, img2):
         emb1 = self.embedding_net(img1)
@@ -179,9 +263,13 @@ def compute_scores(model, loader, device):
     return np.concatenate(all_labels), np.concatenate(all_scores)
 
 
-def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr, margin, model_dir):
+def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr, margin, model_dir, weight_decay=1e-4):
     criterion = ContrastiveLoss(margin=margin)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    # Giam learning rate khi val EER khong cai thien sau 3 epoch - giup model
+    # hoi tu tinh te hon truoc khi early stopping kich hoat, giam overfitting
+    # so voi giu nguyen learning rate cao suot qua trinh train.
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode="min", factor=0.5, patience=3)
 
     best_val_eer = np.inf
     epochs_without_improvement = 0
@@ -203,10 +291,12 @@ def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr,
         train_loss = float(np.mean(epoch_losses))
         val_labels, val_scores = compute_scores(model, val_loader, device)
         _, val_eer = find_eer_threshold(val_labels, val_scores)
+        scheduler.step(val_eer)
 
         history["train_loss"].append(train_loss)
         history["val_eer"].append(val_eer)
-        print(f"Epoch {epoch:3d}/{epochs} | train_loss={train_loss:.4f} | val_EER={val_eer:.4f}")
+        current_lr = optimizer.param_groups[0]["lr"]
+        print(f"Epoch {epoch:3d}/{epochs} | train_loss={train_loss:.4f} | val_EER={val_eer:.4f} | lr={current_lr:.6f}")
 
         if val_eer < best_val_eer:
             best_val_eer = val_eer
@@ -355,11 +445,13 @@ def main():
     parser.add_argument("--model_dir", default=str(DEFAULT_MODEL_DIR))
     parser.add_argument("--tables_dir", default=str(DEFAULT_TABLES_DIR))
     parser.add_argument("--figures_dir", default=str(DEFAULT_FIGURES_DIR))
-    parser.add_argument("--embedding_dim", type=int, default=64)
+    parser.add_argument("--embedding_dim", type=int, default=32)
+    parser.add_argument("--dropout", type=float, default=0.5)
+    parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--margin", type=float, default=1.0)
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--patience", type=int, default=6)
+    parser.add_argument("--patience", type=int, default=8)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--num_workers", type=int, default=0)
     args = parser.parse_args()
@@ -373,20 +465,21 @@ def main():
     test_pairs = pd.read_csv(pairs_dir / "pairs_test.csv")
     print(f"Train pairs: {len(train_pairs)} | Val pairs: {len(val_pairs)} | Test pairs: {len(test_pairs)}")
 
-    train_loader = DataLoader(SignaturePairDataset(train_pairs), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    val_loader = DataLoader(SignaturePairDataset(val_pairs), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-    test_loader = DataLoader(SignaturePairDataset(test_pairs), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+    train_loader = DataLoader(SignaturePairDataset(train_pairs, augment=True), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    val_loader = DataLoader(SignaturePairDataset(val_pairs, augment=False), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+    test_loader = DataLoader(SignaturePairDataset(test_pairs, augment=False), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
-    model = SiameseNetwork(embedding_dim=args.embedding_dim).to(device)
+    model = SiameseNetwork(embedding_dim=args.embedding_dim, dropout=args.dropout).to(device)
     print(f"\nSo luong tham so cua model: {sum(p.numel() for p in model.parameters()):,}")
 
     model_dir = Path(args.model_dir)
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    print("\n=== Bat dau huan luyen Siamese Network ===")
+    print("\n=== Bat dau huan luyen Siamese Network (co data augmentation + regularization) ===")
     model, history, best_val_eer = train_siamese(
         model, train_loader, val_loader, device,
-        epochs=args.epochs, patience=args.patience, lr=args.lr, margin=args.margin, model_dir=model_dir,
+        epochs=args.epochs, patience=args.patience, lr=args.lr, margin=args.margin,
+        model_dir=model_dir, weight_decay=args.weight_decay,
     )
 
     figures_dir = Path(args.figures_dir)

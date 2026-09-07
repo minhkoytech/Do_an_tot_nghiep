@@ -1,63 +1,3 @@
-"""
-06_siamese_network.py
-----------------------
-Siamese Network (CNN backbone + Contrastive Loss) - "Huong tiep can de
-xuat chinh" trong de cuong (Buoc 5).
-
-Kien truc:
-    Anh reference va anh query duoc dua qua CUNG MOT CNN (shared weights)
-    de tao ra 2 vector embedding. Khoang cach Euclidean giua 2 embedding
-    duoc dung de quyet dinh match/non-match - CUNG FORMULATION voi
-    Pairwise Classical ML baseline o 05_pairwise_baseline.py:
-        (Reference, Query) -> Distance -> Match/Non-match
-    Nho vay so sanh Siamese vs Pairwise RF/SVM la cong bang (dung gop y
-    so 4 cua GVHD) - cung writer split, cung dinh nghia pair, cung cach
-    danh gia.
-
-Contrastive Loss (Hadsell et al.):
-    L = (1-Y) * 0.5 * D^2  +  Y * 0.5 * max(0, margin - D)^2
-    trong do Y = 1 neu KHONG khop (non-match), Y = 0 neu khop (match).
-    Luu y: label trong pairs_*.csv dinh nghia NGUOC lai (label=1 la
-    match), nen Y = 1 - label khi tinh loss.
-    Y cua cong thuc: cap giong nhau (match) -> D cang nho cang tot (ep
-    ve 0). Cap khac nhau (non-match) -> D cang lon cang tot, nhung chi
-    can lon hon margin la du (khong ep vo cuc).
-
-Ky luat train/val/test (giong het 05_pairwise_baseline.py):
-    - Huan luyen tren train, EARLY STOPPING dua tren EER cua VAL (khong
-      phai chi dua tren validation loss - EER moi la chi so thuc su
-      quan tam trong bai toan xac thuc).
-    - Threshold quyet dinh (EER) duoc CHON va CO DINH tren VAL.
-    - Test set CHI danh gia DUY NHAT MOT LAN sau khi model + threshold
-      da co dinh.
-
-Sau khi danh gia Siamese tren test, script se TU DONG load lai RF/SVM
-da luu o 05_pairwise_baseline.py (model_artifacts/) va tinh lai diem tren
-CUNG test set, tao ra MOT bang so sanh + MOT bieu do ROC chung cho ca 3
-model - day la ket qua so sanh Classical ML vs Deep Learning ma GVHD yeu
-cau o gop y so 4.
-
-Output:
-    model_artifacts/siamese_best.pt          (trong so model tot nhat theo EER val)
-    model_artifacts/siamese_threshold.json
-    results/tables/siamese_test_summary.csv
-    results/tables/siamese_per_pairtype.csv
-    results/tables/siamese_per_writer.csv
-    results/tables/final_model_comparison.csv        (RF vs SVM vs Siamese)
-    results/figures/siamese_training_curve.png
-    results/figures/final_model_comparison_roc.png   (ROC 3 model tren cung 1 hinh)
-
-Cach dung (khong can tham so, path da khop san):
-    cd src
-    python 06_siamese_network.py
-
-Luu y ve thoi gian chay: voi CEDAR day du (~3500 train pairs, anh
-220x155), moi epoch tren CPU mat khoang vai chuc giay - vai phut, tong
-thoi gian huan luyen (mac dinh 30 epoch, early stopping) thuong duoi
-30-45 phut tren CPU. Neu co GPU NVIDIA, script se TU DONG dung GPU
-(khong can chinh gi them).
-"""
-
 import argparse
 import json
 import re
@@ -151,7 +91,15 @@ class SignaturePairDataset(Dataset):
         img_ref = self._load_image(row["reference_path"])
         img_query = self._load_image(row["query_path"])
         label = torch.tensor(row["label"], dtype=torch.float32)
-        return img_ref, img_query, label
+        # Trong so cho loss: skilled forgery duoc phat nang hon (weight=1.5)
+        # so voi genuine_genuine va random_forgery (weight=1.0), vi day la
+        # truong hop KHO va QUAN TRONG NHAT trong ngan hang (dung uu tien
+        # cua GVHD o gop y so 1) - buoc model tap trung hoc phan biet tot
+        # hon cho dung truong hop nay thay vi doi xu binh dang voi moi loai
+        # cap negative.
+        weight = 1.5 if row["pair_type"] == "skilled_forgery" else 1.0
+        weight = torch.tensor(weight, dtype=torch.float32)
+        return img_ref, img_query, label, weight
 
 
 # ---------------------------------------------------------------------------
@@ -161,30 +109,35 @@ class EmbeddingCNN(nn.Module):
     """
     CNN backbone tao embedding tu 1 anh chu ky.
 
-    Dung AdaptiveAvgPool2d de nen feature map ve kich thuoc CO DINH (4x4)
-    truoc khi vao lop Linear dau tien - neu khong lam vay, flatten truc
-    tiep feature map 128x19x27 se tao ra lop Linear voi ~16.8 TRIEU tham
-    so (65664 x 256), la nguyen nhan chinh khien qua trinh train tren CPU
-    rat cham. AdaptiveAvgPool2d((4,4)) giam flat_dim xuong con 128*4*4=2048,
-    giam gan 10 lan so tham so cua lop Linear dau tien ma khong anh huong
-    nhieu den chat luong (thong tin quan trong da duoc CNN nen lai qua cac
-    lop conv/pool truoc do).
+    Kien truc 5 lop conv (dua theo do sau cua SigNet - Dey et al. 2017),
+    ~3.1 trieu tham so - khop voi muc tham chieu "Only Siamese Network"
+    trong nghien cuu SigScatNet (3,327,056 tham so, dat EER 0.069% tren
+    CEDAR - xem Table III trong arxiv:2311.05579). Day la muc do sau/
+    dung luong hop ly cho bai toan nay khi KHONG dung pretraining tu bo
+    du lieu ngoai.
+
+    BatchNorm2d/BatchNorm1d sau moi lop: on dinh va tang toc hoi tu,
+    dong thoi co tac dung regularize nhe.
+
+    AdaptiveAvgPool2d((4,4)) truoc FC de kiem soat kich thuoc FC dau
+    tien, tranh so tham so bung no khi flatten truc tiep feature map.
     """
 
     def __init__(self, embedding_dim=64, dropout=0.5):
         super().__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=5, padding=2), nn.ReLU(), nn.MaxPool2d(2),    # -> 32 x 77 x 110
-            nn.Conv2d(32, 64, kernel_size=3, padding=1), nn.ReLU(), nn.MaxPool2d(2),   # -> 64 x 38 x 55
-            nn.Conv2d(64, 128, kernel_size=3, padding=1), nn.ReLU(), nn.MaxPool2d(2),  # -> 128 x 19 x 27
-            nn.Conv2d(128, 128, kernel_size=3, padding=1), nn.ReLU(),
-            nn.AdaptiveAvgPool2d((4, 4)),                                              # -> 128 x 4 x 4 (co dinh)
+            nn.Conv2d(1, 32, kernel_size=5, padding=2), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),     # -> 32 x 77 x 110
+            nn.Conv2d(32, 64, kernel_size=3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),    # -> 64 x 38 x 55
+            nn.Conv2d(64, 128, kernel_size=3, padding=1), nn.BatchNorm2d(128), nn.ReLU(), nn.MaxPool2d(2),  # -> 128 x 19 x 27
+            nn.Conv2d(128, 256, kernel_size=3, padding=1), nn.BatchNorm2d(256), nn.ReLU(), nn.MaxPool2d(2), # -> 256 x 9 x 13
+            nn.Conv2d(256, 256, kernel_size=3, padding=1), nn.BatchNorm2d(256), nn.ReLU(),
+            nn.AdaptiveAvgPool2d((4, 4)),                                                                    # -> 256 x 4 x 4 (co dinh)
         )
-        flat_dim = 128 * 4 * 4
+        flat_dim = 256 * 4 * 4
         self.fc = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(flat_dim, 256), nn.ReLU(), nn.Dropout(dropout),
-            nn.Linear(256, embedding_dim),
+            nn.Linear(flat_dim, 512), nn.BatchNorm1d(512), nn.ReLU(), nn.Dropout(dropout),
+            nn.Linear(512, embedding_dim),
         )
 
     def forward(self, x):
@@ -206,17 +159,23 @@ class SiameseNetwork(nn.Module):
 
 
 class ContrastiveLoss(nn.Module):
-    """L = (1-Y)*0.5*D^2 + Y*0.5*max(0, margin-D)^2 ; Y=1 neu non-match."""
+    """L = (1-Y)*0.5*D^2 + Y*0.5*max(0, margin-D)^2 ; Y=1 neu non-match.
+    Ho tro trong so per-sample (weight) de phat nang hon cac cap kho/quan
+    trong hon (skilled forgery) - xem giai thich o SignaturePairDataset.
+    """
 
     def __init__(self, margin=1.0):
         super().__init__()
         self.margin = margin
 
-    def forward(self, distance, label):
+    def forward(self, distance, label, weight=None):
         y_dissimilar = 1 - label  # label=1 (match) -> y=0 ; label=0 (non-match) -> y=1
         loss_similar = (1 - y_dissimilar) * 0.5 * distance.pow(2)
         loss_dissimilar = y_dissimilar * 0.5 * torch.clamp(self.margin - distance, min=0).pow(2)
-        return (loss_similar + loss_dissimilar).mean()
+        per_sample_loss = loss_similar + loss_dissimilar
+        if weight is not None:
+            per_sample_loss = per_sample_loss * weight
+        return per_sample_loss.mean()
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +211,7 @@ def parse_writer_split(writer_split_path, split_name):
 def compute_scores(model, loader, device):
     model.eval()
     all_scores, all_labels = [], []
-    for img1, img2, label in loader:
+    for img1, img2, label, _weight in loader:
         img1, img2 = img1.to(device), img2.to(device)
         distance = model(img1, img2)
         # score = -distance: khoang cach cang NHO nghia la cang GIONG NHAU
@@ -263,7 +222,7 @@ def compute_scores(model, loader, device):
     return np.concatenate(all_labels), np.concatenate(all_scores)
 
 
-def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr, margin, model_dir, weight_decay=1e-4):
+def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr, margin, model_dir, weight_decay=1e-4, model_name="siamese_best"):
     criterion = ContrastiveLoss(margin=margin)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
     # Giam learning rate khi val EER khong cai thien sau 3 epoch - giup model
@@ -274,16 +233,16 @@ def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr,
     best_val_eer = np.inf
     epochs_without_improvement = 0
     history = {"train_loss": [], "val_eer": []}
-    best_model_path = model_dir / "siamese_best.pt"
+    best_model_path = model_dir / f"{model_name}.pt"
 
     for epoch in range(1, epochs + 1):
         model.train()
         epoch_losses = []
-        for img1, img2, label in train_loader:
-            img1, img2, label = img1.to(device), img2.to(device), label.to(device)
+        for img1, img2, label, weight in train_loader:
+            img1, img2, label, weight = img1.to(device), img2.to(device), label.to(device), weight.to(device)
             optimizer.zero_grad()
             distance = model(img1, img2)
-            loss = criterion(distance, label)
+            loss = criterion(distance, label, weight)
             loss.backward()
             optimizer.step()
             epoch_losses.append(loss.item())
@@ -438,6 +397,26 @@ def plot_combined_roc(scores_dict: dict, out_path: Path):
     print(f"Da luu bieu do ROC so sanh: {out_path}")
 
 
+@torch.no_grad()
+def compute_ensemble_scores(models: list, loader, device):
+    """
+    Tinh score trung binh tren toan bo ensemble (list cac model da train).
+    Ky thuat ensemble averaging: giam phuong sai cua du doan bang cach
+    lay trung binh nhieu model duoc train doc lap (seed khac nhau) -
+    thuong cho ket qua on dinh va tot hon mot model don le, voi dieu
+    kien cac model du "da dang" (khac seed/augmentation ngau nhien).
+    """
+    all_scores_per_model = []
+    labels_ref = None
+    for model in models:
+        labels, scores = compute_scores(model, loader, device)
+        if labels_ref is None:
+            labels_ref = labels
+        all_scores_per_model.append(scores)
+    ensemble_scores = np.mean(np.stack(all_scores_per_model, axis=0), axis=0)
+    return labels_ref, ensemble_scores
+
+
 def main():
     parser = argparse.ArgumentParser(description="Siamese Network cho xac thuc chu ky")
     parser.add_argument("--pairs_dir", default=str(DEFAULT_PAIRS_DIR))
@@ -445,15 +424,19 @@ def main():
     parser.add_argument("--model_dir", default=str(DEFAULT_MODEL_DIR))
     parser.add_argument("--tables_dir", default=str(DEFAULT_TABLES_DIR))
     parser.add_argument("--figures_dir", default=str(DEFAULT_FIGURES_DIR))
-    parser.add_argument("--embedding_dim", type=int, default=32)
+    parser.add_argument("--embedding_dim", type=int, default=64)
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--margin", type=float, default=1.0)
     parser.add_argument("--batch_size", type=int, default=32)
-    parser.add_argument("--epochs", type=int, default=30)
-    parser.add_argument("--patience", type=int, default=8)
+    parser.add_argument("--epochs", type=int, default=60)
+    parser.add_argument("--patience", type=int, default=15)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--num_workers", type=int, default=0)
+    parser.add_argument("--num_models", type=int, default=3,
+                         help="So luong model trong ensemble. Moi model duoc train doc lap voi "
+                              "seed khac nhau, ket qua cuoi la trung binh score cua ca ensemble. "
+                              "Tang so nay (vd 5) neu muon on dinh hon nhung se ton nhieu thoi gian hon.")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -465,46 +448,65 @@ def main():
     test_pairs = pd.read_csv(pairs_dir / "pairs_test.csv")
     print(f"Train pairs: {len(train_pairs)} | Val pairs: {len(val_pairs)} | Test pairs: {len(test_pairs)}")
 
-    train_loader = DataLoader(SignaturePairDataset(train_pairs, augment=True), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    train_loader = DataLoader(SignaturePairDataset(train_pairs, augment=True), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
     val_loader = DataLoader(SignaturePairDataset(val_pairs, augment=False), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     test_loader = DataLoader(SignaturePairDataset(test_pairs, augment=False), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
-    model = SiameseNetwork(embedding_dim=args.embedding_dim, dropout=args.dropout).to(device)
-    print(f"\nSo luong tham so cua model: {sum(p.numel() for p in model.parameters()):,}")
-
     model_dir = Path(args.model_dir)
     model_dir.mkdir(parents=True, exist_ok=True)
-
-    print("\n=== Bat dau huan luyen Siamese Network (co data augmentation + regularization) ===")
-    model, history, best_val_eer = train_siamese(
-        model, train_loader, val_loader, device,
-        epochs=args.epochs, patience=args.patience, lr=args.lr, margin=args.margin,
-        model_dir=model_dir, weight_decay=args.weight_decay,
-    )
-
     figures_dir = Path(args.figures_dir)
     figures_dir.mkdir(parents=True, exist_ok=True)
-    plot_training_curve(history, figures_dir / "siamese_training_curve.png")
+    tables_dir = Path(args.tables_dir)
+    tables_dir.mkdir(parents=True, exist_ok=True)
 
-    # Threshold (EER) CO DINH tu VAL
-    val_labels, val_scores = compute_scores(model, val_loader, device)
-    threshold, _ = find_eer_threshold(val_labels, val_scores)
-    print(f"\nThreshold Siamese (tu val, EER={best_val_eer:.4f}): {threshold:.4f}")
+    # -----------------------------------------------------------------
+    # Train ENSEMBLE gom args.num_models model doc lap, seed khac nhau
+    # -----------------------------------------------------------------
+    trained_models = []
+    all_histories = []
+    for i in range(args.num_models):
+        seed = RANDOM_SEED + i
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        print(f"\n{'='*70}\nTRAIN MODEL {i+1}/{args.num_models} (seed={seed})\n{'='*70}")
+
+        model = SiameseNetwork(embedding_dim=args.embedding_dim, dropout=args.dropout).to(device)
+        if i == 0:
+            print(f"So luong tham so moi model: {sum(p.numel() for p in model.parameters()):,}")
+
+        model, history, best_val_eer = train_siamese(
+            model, train_loader, val_loader, device,
+            epochs=args.epochs, patience=args.patience, lr=args.lr, margin=args.margin,
+            model_dir=model_dir, weight_decay=args.weight_decay, model_name=f"siamese_model_{i}",
+        )
+        trained_models.append(model)
+        all_histories.append(history)
+        print(f"Model {i+1} hoan tat, best val EER = {best_val_eer:.4f}")
+
+    plot_training_curve(all_histories[0], figures_dir / "siamese_training_curve.png")
+
+    # -----------------------------------------------------------------
+    # Threshold (EER) CO DINH tu VAL - dua tren SCORE TRUNG BINH CUA ENSEMBLE
+    # -----------------------------------------------------------------
+    val_labels, val_scores = compute_ensemble_scores(trained_models, val_loader, device)
+    threshold, ensemble_val_eer = find_eer_threshold(val_labels, val_scores)
+    print(f"\nThreshold Ensemble Siamese (tu val, EER={ensemble_val_eer:.4f}): {threshold:.4f}")
 
     with open(model_dir / "siamese_threshold.json", "w") as f:
-        json.dump({"threshold": float(threshold), "embedding_dim": args.embedding_dim, "margin": args.margin}, f, indent=2)
+        json.dump({
+            "threshold": float(threshold), "embedding_dim": args.embedding_dim,
+            "margin": args.margin, "num_models": args.num_models,
+        }, f, indent=2)
 
     # -----------------------------------------------------------------
-    # Danh gia TREN TEST - CHI MOT LAN
+    # Danh gia TREN TEST - CHI MOT LAN, dung score trung binh ensemble
     # -----------------------------------------------------------------
-    print("\n=== Danh gia Siamese tren TEST (mot lan duy nhat) ===")
-    test_labels, test_scores = compute_scores(model, test_loader, device)
+    print("\n=== Danh gia Ensemble Siamese tren TEST (mot lan duy nhat) ===")
+    test_labels, test_scores = compute_ensemble_scores(trained_models, test_loader, device)
     siamese_overall, siamese_pairtype, siamese_writer = evaluate_model(
         test_labels, test_scores, threshold, "siamese", test_pairs
     )
 
-    tables_dir = Path(args.tables_dir)
-    tables_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame([siamese_overall]).to_csv(tables_dir / "siamese_test_summary.csv", index=False)
     siamese_pairtype.to_csv(tables_dir / "siamese_per_pairtype.csv", index=False)
     siamese_writer.to_csv(tables_dir / "siamese_per_writer.csv", index=False)
@@ -528,13 +530,13 @@ def main():
     comparison_df = pd.DataFrame(all_overall)
     comparison_path = tables_dir / "final_model_comparison.csv"
     comparison_df.to_csv(comparison_path, index=False)
-    print(f"\n=== BANG SO SANH CUOI CUNG (Pairwise RF/SVM vs Siamese Network) ===")
+    print(f"\n=== BANG SO SANH CUOI CUNG (Pairwise RF/SVM vs Ensemble Siamese Network) ===")
     print(comparison_df.to_string(index=False))
     print(f"Da luu: {comparison_path}")
 
     plot_combined_roc(combined_scores, figures_dir / "final_model_comparison_roc.png")
 
-    print(f"\nHoan tat. Model Siamese da luu tai: {model_dir / 'siamese_best.pt'}")
+    print(f"\nHoan tat. {args.num_models} model Siamese da luu trong: {model_dir}")
 
 
 if __name__ == "__main__":

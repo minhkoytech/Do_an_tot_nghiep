@@ -1,3 +1,100 @@
+"""
+06_siamese_network.py
+----------------------
+Siamese Network (CNN backbone + Contrastive Loss) - "Huong tiep can de
+xuat chinh" trong de cuong (Buoc 5).
+
+Kien truc:
+    Anh reference va anh query duoc dua qua CUNG MOT CNN (shared weights)
+    de tao ra 2 vector embedding. Khoang cach Euclidean giua 2 embedding
+    duoc dung de quyet dinh match/non-match - CUNG FORMULATION voi
+    Pairwise Classical ML baseline o 05_pairwise_baseline.py:
+        (Reference, Query) -> Distance -> Match/Non-match
+    Nho vay so sanh Siamese vs Pairwise RF/SVM la cong bang (dung gop y
+    so 4 cua GVHD) - cung writer split, cung dinh nghia pair, cung cach
+    danh gia.
+
+Contrastive Loss (Hadsell et al.):
+    L = (1-Y) * 0.5 * D^2  +  Y * 0.5 * max(0, margin - D)^2
+    trong do Y = 1 neu KHONG khop (non-match), Y = 0 neu khop (match).
+    Luu y: label trong pairs_*.csv dinh nghia NGUOC lai (label=1 la
+    match), nen Y = 1 - label khi tinh loss.
+    Y cua cong thuc: cap giong nhau (match) -> D cang nho cang tot (ep
+    ve 0). Cap khac nhau (non-match) -> D cang lon cang tot, nhung chi
+    can lon hon margin la du (khong ep vo cuc).
+
+Ky luat train/val/test (giong het 05_pairwise_baseline.py):
+    - Huan luyen tren train, EARLY STOPPING dua tren EER cua VAL (khong
+      phai chi dua tren validation loss - EER moi la chi so thuc su
+      quan tam trong bai toan xac thuc).
+    - Threshold quyet dinh (EER) duoc CHON va CO DINH tren VAL.
+    - Test set CHI danh gia DUY NHAT MOT LAN sau khi model + threshold
+      da co dinh.
+
+Sau khi danh gia Siamese tren test, script se TU DONG load lai RF/SVM
+da luu o 05_pairwise_baseline.py (model_artifacts/) va tinh lai diem tren
+CUNG test set, tao ra MOT bang so sanh + MOT bieu do ROC chung cho ca 3
+model - day la ket qua so sanh Classical ML vs Deep Learning ma GVHD yeu
+cau o gop y so 4.
+
+Ensemble (mac dinh 3 model doc lap, --num_models de doi):
+    Thay vi train 1 model duy nhat, script train NHIEU model Siamese
+    doc lap (seed khoi tao khac nhau), roi lay TRUNG BINH score (khoang
+    cach) cua ca ensemble de ra quyet dinh cuoi cung. Day la ky thuat
+    giam phuong sai (variance reduction) chuan muc trong ML, thuong cho
+    ket qua on dinh va chinh xac hon 1 model don le - danh doi la thoi
+    gian train tang len (gap args.num_models lan).
+
+Weighted Contrastive Loss:
+    Cap skilled_forgery duoc nhan trong so 1.5x trong loss (so voi 1.0x
+    cho genuine_genuine va random_forgery), vi day la truong hop KHO va
+    QUAN TRONG NHAT trong ngan hang (dung uu tien cua GVHD o gop y so 1).
+
+Output:
+    model_artifacts/siamese_model_{0,1,2}.pt (trong so tung model trong ensemble)
+    model_artifacts/siamese_threshold.json
+    results/tables/siamese_test_summary.csv
+    results/tables/siamese_per_pairtype.csv
+    results/tables/siamese_per_writer.csv
+    results/tables/final_model_comparison.csv        (RF vs SVM vs Ensemble Siamese)
+    results/figures/siamese_training_curve.png       (cua model dau tien trong ensemble)
+    results/figures/final_model_comparison_roc.png   (ROC 3 model tren cung 1 hinh)
+
+Cach dung (khong can tham so, path da khop san):
+    cd src
+    python 06_siamese_network.py
+
+Luu y ve thoi gian chay: voi ensemble 3 model, tong thoi gian se GAP 3
+LAN so voi train 1 model. Neu ban da tang so pairs o 01b_generate_pairs.py
+(khuyen nghi), thoi gian moi epoch cung tang tuong ung. Tren may CPU thong
+thuong, tong thoi gian co the tu 30 phut den vai gio tuy cau hinh may va
+so luong pairs/model. Neu muon nhanh hon, giam --num_models xuong 1 hoac 2.
+Neu co GPU NVIDIA, script se TU DONG dung GPU (khong can chinh gi them).
+
+Ky vong ve EER (de dua vao bao cao, tranh ky vong sai lech):
+    Cac nghien cuu writer-independent (WI) nghiem tuc tren CEDAR thuong
+    dat EER trong khoang 2-8% (Kalera 2004: 21.9%, Kumar 2012: 8.33%,
+    Kumar&Puhan 2014: 6.02%, Guerbai 2015: 5.60%, Zois 2019: 2.90%).
+    Mot so paper cong bo EER < 1% (vd SigNet cua Dey et al. 2017,
+    SigScatNet) DEU dua tren PRETRAINING mot CNN lon (hang trieu tham
+    so) tren mot bo du lieu PHU rat lon (GPDS voi 581 writer dung cho
+    writer-identification pretext task) roi moi transfer sang CEDAR -
+    day la loi the du lieu ma de cuong nay CHU DONG KHONG su dung (GVHD
+    da xac nhan CEDAR la du, khong can them dataset khac). Vi vay EER
+    dat duoc trong pham vi do an nay (chi dung CEDAR, khong pretrain
+    tren bo du lieu ngoai) can duoc so sanh voi nhom phuong phap WI
+    KHONG dung pretraining/transfer learning tu bo du lieu lon, thay vi
+    so sanh truc tiep voi cac con so SOTA <1% - su so sanh do la khap
+    khieng ve mat phuong phap luan.
+
+Nguon tham khao (dua vao bao cao neu can trich dan):
+    - Dey et al. (2017), "SigNet: Convolutional Siamese Network for
+      Writer Independent Offline Signature Verification", arXiv:1707.02131
+    - Souza et al. (2021), "A white-box analysis on the writer-independent
+      dichotomy transformation...", arxiv:2004.03370 (bang tong hop EER
+      cac phuong phap WI tren CEDAR, Table 12)
+"""
+
 import argparse
 import json
 import re
@@ -13,6 +110,7 @@ import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
+import torchvision
 from torch.utils.data import Dataset, DataLoader
 
 from sklearn.metrics import (
@@ -31,6 +129,9 @@ DEFAULT_TABLES_DIR = PROJECT_ROOT / "results" / "tables"
 DEFAULT_FIGURES_DIR = PROJECT_ROOT / "results" / "figures"
 
 CANVAS_HEIGHT, CANVAS_WIDTH = 155, 220  # khop voi CANVAS_SIZE trong 01_preprocessing.py
+PRETRAINED_IMG_SIZE = 224  # kich thuoc chuan ma ResNet18 duoc pretrain tren ImageNet
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
 RANDOM_SEED = 42
 
 # Phai khop CHINH XAC voi SELECTED_FEATURES trong 05_pairwise_baseline.py
@@ -59,9 +160,15 @@ class SignaturePairDataset(Dataset):
     la du lieu dung de danh gia, phai giu nguyen.
     """
 
-    def __init__(self, pairs_df: pd.DataFrame, augment: bool = False):
+    def __init__(self, pairs_df: pd.DataFrame, augment: bool = False, use_pretrained: bool = False):
         self.pairs_df = pairs_df.reset_index(drop=True)
         self.augment = augment
+        # use_pretrained=True: resize anh ve 224x224, nhan ban thanh 3
+        # kenh (gia lap RGB), chuan hoa theo mean/std cua ImageNet - bat
+        # buoc phai lam vay de tuong thich voi trong so pretrain cua
+        # ResNet18. use_pretrained=False (mac dinh): giu nguyen pipeline
+        # cu (grayscale 1 kenh, [0,1], dung cho CNN tu xay).
+        self.use_pretrained = use_pretrained
 
     def __len__(self):
         return len(self.pairs_df)
@@ -83,8 +190,19 @@ class SignaturePairDataset(Dataset):
             raise FileNotFoundError(f"Khong doc duoc anh: {path}")
         if self.augment:
             img = self._augment_image(img)
-        img = img.astype(np.float32) / 255.0  # chuan hoa ve [0, 1]
-        return torch.from_numpy(img).unsqueeze(0)  # shape (1, H, W)
+
+        if self.use_pretrained:
+            img = cv2.resize(img, (PRETRAINED_IMG_SIZE, PRETRAINED_IMG_SIZE), interpolation=cv2.INTER_AREA)
+            img = img.astype(np.float32) / 255.0
+            img_3ch = np.stack([img, img, img], axis=0)  # gia lap 3 kenh RGB tu grayscale
+            tensor = torch.from_numpy(img_3ch)
+            mean = torch.tensor(IMAGENET_MEAN).view(3, 1, 1)
+            std = torch.tensor(IMAGENET_STD).view(3, 1, 1)
+            tensor = (tensor - mean) / std
+            return tensor
+        else:
+            img = img.astype(np.float32) / 255.0  # chuan hoa ve [0, 1]
+            return torch.from_numpy(img).unsqueeze(0)  # shape (1, H, W)
 
     def __getitem__(self, idx):
         row = self.pairs_df.iloc[idx]
@@ -144,12 +262,61 @@ class EmbeddingCNN(nn.Module):
         return self.fc(self.conv(x))
 
 
-class SiameseNetwork(nn.Module):
-    """Boc 2 nhanh CNN dung chung trong so (Siamese) + tinh khoang cach Euclidean."""
+class ResNetEmbedding(nn.Module):
+    """
+    Embedding network dung ResNet18 pretrain tren ImageNet (transfer
+    learning) thay vi CNN tu xay tu dau.
 
-    def __init__(self, embedding_dim=64, dropout=0.5):
+    Vi sao thu huong nay: khi tang so luong pairs training (tu 3500 len
+    13125) khong cai thien duoc EER (van dung o ~0.26-0.27), dieu do cho
+    thay gioi han khong nam o SO LUONG PAIRS ma o SO LUONG WRITER/anh
+    goc (chi 35 writer trong tap train) - tang to hop cap tu CUNG mot
+    tap anh co dinh khong tao ra thong tin moi. Transfer learning la
+    huong con lai HOP LE trong pham vi CEDAR-only: dung trong so da hoc
+    tu ImageNet (mot bo du lieu ANH TONG QUAT, khong phai chu ky) lam
+    diem khoi tao, thay vi random init - cac lop dau cua CNN pretrain
+    tren ImageNet da hoc duoc cac bo loc phat hien canh/net/texture co
+    ban, co the huu ich ngay ca voi anh chu ky (von cung la net ve/canh).
+
+    Dong bang cac lop dau (conv1, bn1, layer1, layer2) - giu nguyen dac
+    trung tong quat da hoc duoc. Fine-tune layer3, layer4 va embedding
+    head moi - cho phep model dieu chinh cac dac trung muc cao hon de
+    phu hop voi dac diem rieng cua chu ky.
+    """
+
+    def __init__(self, embedding_dim=64, dropout=0.5, freeze_early_layers=True):
         super().__init__()
-        self.embedding_net = EmbeddingCNN(embedding_dim, dropout)
+        weights = torchvision.models.ResNet18_Weights.IMAGENET1K_V1
+        backbone = torchvision.models.resnet18(weights=weights)
+
+        if freeze_early_layers:
+            for name, param in backbone.named_parameters():
+                if name.startswith("layer3") or name.startswith("layer4") or name.startswith("fc"):
+                    param.requires_grad = True
+                else:
+                    param.requires_grad = False
+
+        backbone.fc = nn.Identity()  # bo lop phan loai goc (1000 lop ImageNet), giu output 512-dim
+        self.backbone = backbone
+        self.head = nn.Sequential(
+            nn.Linear(512, 256), nn.BatchNorm1d(256), nn.ReLU(), nn.Dropout(dropout),
+            nn.Linear(256, embedding_dim),
+        )
+
+    def forward(self, x):
+        features = self.backbone(x)
+        return self.head(features)
+
+
+class SiameseNetwork(nn.Module):
+    """Boc embedding network (CNN tu xay hoac ResNet18 pretrain) trong Siamese + tinh khoang cach Euclidean."""
+
+    def __init__(self, embedding_dim=64, dropout=0.5, backbone_type="custom"):
+        super().__init__()
+        if backbone_type == "resnet18":
+            self.embedding_net = ResNetEmbedding(embedding_dim, dropout, freeze_early_layers=True)
+        else:
+            self.embedding_net = EmbeddingCNN(embedding_dim, dropout)
 
     def forward(self, img1, img2):
         emb1 = self.embedding_net(img1)
@@ -224,7 +391,8 @@ def compute_scores(model, loader, device):
 
 def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr, margin, model_dir, weight_decay=1e-4, model_name="siamese_best"):
     criterion = ContrastiveLoss(margin=margin)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    optimizer = torch.optim.Adam(trainable_params, lr=lr, weight_decay=weight_decay)
     # Giam learning rate khi val EER khong cai thien sau 3 epoch - giup model
     # hoi tu tinh te hon truoc khi early stopping kich hoat, giam overfitting
     # so voi giu nguyen learning rate cao suot qua trinh train.
@@ -433,6 +601,12 @@ def main():
     parser.add_argument("--patience", type=int, default=15)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--num_workers", type=int, default=0)
+    parser.add_argument("--backbone", choices=["custom", "resnet18"], default="resnet18",
+                         help="'custom': CNN tu xay tu dau (nhe, nhanh hon tren CPU). "
+                              "'resnet18': transfer learning tu ResNet18 pretrain ImageNet, "
+                              "dong bang lop dau, fine-tune layer3/layer4 + head moi (anh phai "
+                              "resize 224x224 va nhan 3 kenh, nang hon va cham hon 'custom' tren CPU "
+                              "nhung co the manh hon nho tan dung dac trung da hoc san).")
     parser.add_argument("--num_models", type=int, default=3,
                          help="So luong model trong ensemble. Moi model duoc train doc lap voi "
                               "seed khac nhau, ket qua cuoi la trung binh score cua ca ensemble. "
@@ -441,6 +615,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Dang su dung device: {device}")
+    print(f"Backbone: {args.backbone}")
 
     pairs_dir = Path(args.pairs_dir)
     train_pairs = pd.read_csv(pairs_dir / "pairs_train.csv")
@@ -448,9 +623,10 @@ def main():
     test_pairs = pd.read_csv(pairs_dir / "pairs_test.csv")
     print(f"Train pairs: {len(train_pairs)} | Val pairs: {len(val_pairs)} | Test pairs: {len(test_pairs)}")
 
-    train_loader = DataLoader(SignaturePairDataset(train_pairs, augment=True), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
-    val_loader = DataLoader(SignaturePairDataset(val_pairs, augment=False), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-    test_loader = DataLoader(SignaturePairDataset(test_pairs, augment=False), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+    use_pretrained = (args.backbone == "resnet18")
+    train_loader = DataLoader(SignaturePairDataset(train_pairs, augment=True, use_pretrained=use_pretrained), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
+    val_loader = DataLoader(SignaturePairDataset(val_pairs, augment=False, use_pretrained=use_pretrained), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+    test_loader = DataLoader(SignaturePairDataset(test_pairs, augment=False, use_pretrained=use_pretrained), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
     model_dir = Path(args.model_dir)
     model_dir.mkdir(parents=True, exist_ok=True)
@@ -470,9 +646,11 @@ def main():
         np.random.seed(seed)
         print(f"\n{'='*70}\nTRAIN MODEL {i+1}/{args.num_models} (seed={seed})\n{'='*70}")
 
-        model = SiameseNetwork(embedding_dim=args.embedding_dim, dropout=args.dropout).to(device)
+        model = SiameseNetwork(embedding_dim=args.embedding_dim, dropout=args.dropout, backbone_type=args.backbone).to(device)
         if i == 0:
-            print(f"So luong tham so moi model: {sum(p.numel() for p in model.parameters()):,}")
+            total_params = sum(p.numel() for p in model.parameters())
+            trainable_params_count = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            print(f"Tong so tham so: {total_params:,} | So tham so duoc train: {trainable_params_count:,}")
 
         model, history, best_val_eer = train_siamese(
             model, train_loader, val_loader, device,

@@ -45,6 +45,22 @@ Ensemble (mac dinh 3 model doc lap, --num_models de doi):
     ket qua on dinh va chinh xac hon 1 model don le - danh doi la thoi
     gian train tang len (gap args.num_models lan).
 
+Pretraining Writer Identification (mac dinh BAT, --no_pretrain_writer_id de tat):
+    Truoc khi fine-tune bang contrastive loss, embedding duoc PRETRAIN
+    qua mot tac vu khac: phan loai xem mot anh chu ky GENUINE thuoc ve
+    writer nao trong so cac writer cua tap TRAIN (N-way classification,
+    N = so writer train). Day la ky thuat CHINH ma SigNet (Dey et al.
+    2017) dung de dat EER thap tren CEDAR - ho pretrain tren GPDS (581
+    writer). O day dung CHINH 35 writer cua tap train CEDAR lam 35 lop
+    phan loai - KHONG can them du lieu ngoai, van dung phamvi CEDAR-only
+    cua de cuong. (Da thu ImageNet transfer learning truoc do va cho
+    ket qua KEM HON do domain gap qua lon giua anh tu nhien va chu ky
+    nhi phan - writer-ID pretraining tren CHINH du lieu chu ky la huong
+    hop ly hon.) Sau khi pretrain, trong so embedding_net duoc dung lam
+    diem khoi tao cho CA 3 model trong ensemble, truoc khi fine-tune
+    doc lap bang contrastive loss (su da dang cua ensemble den tu thu
+    tu xao tron du lieu va dropout khac nhau giua cac lan fine-tune).
+
 Weighted Contrastive Loss:
     Cap skilled_forgery duoc nhan trong so 1.5x trong loss (so voi 1.0x
     cho genuine_genuine va random_forgery), vi day la truong hop KHO va
@@ -124,6 +140,7 @@ from sklearn.metrics import (
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PAIRS_DIR = PROJECT_ROOT / "data" / "processed" / "pairs"
 DEFAULT_FEATURES = PROJECT_ROOT / "data" / "processed" / "features.csv"
+DEFAULT_MANIFEST = PROJECT_ROOT / "data" / "processed" / "manifest.csv"
 DEFAULT_MODEL_DIR = PROJECT_ROOT / "model_artifacts"
 DEFAULT_TABLES_DIR = PROJECT_ROOT / "results" / "tables"
 DEFAULT_FIGURES_DIR = PROJECT_ROOT / "results" / "figures"
@@ -306,6 +323,134 @@ class ResNetEmbedding(nn.Module):
     def forward(self, x):
         features = self.backbone(x)
         return self.head(features)
+
+
+class WriterIdentificationDataset(Dataset):
+    """
+    Dataset cho pretext task NHAN DIEN WRITER, dung de PRETRAIN embedding
+    truoc khi fine-tune Siamese - mo phong dung phuong phap cua SigNet
+    (Dey et al. 2017): ho pretrain CNN qua bai toan phan loai writer
+    (581 lop tren GPDS) truoc khi chuyen sang xac thuc chu ky, vi tin
+    hieu hoc tu bai toan phan loai N-lop manh hon nhieu so voi tin hieu
+    match/non-match nhi phan cua contrastive loss.
+
+    O day dung CHINH 35 writer trong tap TRAIN cua CEDAR lam 35 lop
+    phan loai - KHONG can them du lieu ngoai, van nam trong pham vi
+    CEDAR-only cua de cuong (khac voi ImageNet transfer learning da thu
+    va khong hieu qua do domain gap qua lon).
+
+    Chi dung anh GENUINE (khong dung anh forged) de tranh day model hoc
+    sai: anh gia mao khong phan anh dung phong cach viet cua writer bi
+    gia mao, dua vao lam nhan se tao nhieu (label noise).
+    """
+
+    def __init__(self, image_paths: list, writer_labels: list, augment: bool = True):
+        self.image_paths = image_paths
+        self.writer_labels = writer_labels  # da encode ve 0..num_classes-1
+        self.augment = augment
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def _augment_image(self, img: np.ndarray) -> np.ndarray:
+        h, w = img.shape
+        angle = np.random.uniform(-8, 8)
+        tx = np.random.randint(-8, 9)
+        ty = np.random.randint(-8, 9)
+        matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+        matrix[0, 2] += tx
+        matrix[1, 2] += ty
+        return cv2.warpAffine(img, matrix, (w, h), borderValue=0)
+
+    def __getitem__(self, idx):
+        img = cv2.imread(self.image_paths[idx], cv2.IMREAD_GRAYSCALE)
+        if self.augment:
+            img = self._augment_image(img)
+        img = img.astype(np.float32) / 255.0
+        tensor = torch.from_numpy(img).unsqueeze(0)
+        label = torch.tensor(self.writer_labels[idx], dtype=torch.long)
+        return tensor, label
+
+
+class WriterIDClassifier(nn.Module):
+    """CNN backbone (EmbeddingCNN) + 1 lop Linear phan loai writer - chi dung o buoc pretraining."""
+
+    def __init__(self, embedding_dim: int, num_classes: int, dropout: float = 0.5):
+        super().__init__()
+        self.embedding_net = EmbeddingCNN(embedding_dim, dropout)
+        self.classifier_head = nn.Linear(embedding_dim, num_classes)
+
+    def forward(self, x):
+        return self.classifier_head(self.embedding_net(x))
+
+
+def pretrain_writer_id(manifest_df, train_writer_ids, embedding_dim, dropout, device,
+                        epochs=20, batch_size=32, lr=1e-3, weight_decay=1e-4):
+    """
+    Pretrain embedding qua tac vu phan loai writer (chi tren anh genuine
+    cua cac writer trong tap TRAIN). Tra ve state_dict cua embedding_net
+    da pretrain, se duoc nap vao Siamese Network truoc khi fine-tune
+    bang contrastive loss.
+
+    Chia 85/15 NOI BO chi de theo doi hoi tu cua buoc pretraining nay -
+    KHONG lien quan va KHONG gay leakage vao tap val/test cua bai toan
+    xac thuc chinh (pairs_val.csv / pairs_test.csv), vi toan bo qua
+    trinh nay chi dung anh cua writer trong tap TRAIN.
+    """
+    genuine_train = manifest_df[
+        (manifest_df["label"] == "genuine") & (manifest_df["writer_id"].isin(train_writer_ids))
+    ]
+    writer_id_to_class = {wid: i for i, wid in enumerate(sorted(train_writer_ids))}
+    image_paths = genuine_train["path"].tolist()
+    writer_class_labels = [writer_id_to_class[wid] for wid in genuine_train["writer_id"]]
+
+    rng = np.random.RandomState(RANDOM_SEED)
+    indices = list(range(len(image_paths)))
+    rng.shuffle(indices)
+    split_point = int(len(indices) * 0.85)
+    train_idx, val_idx = indices[:split_point], indices[split_point:]
+
+    train_ds = WriterIdentificationDataset(
+        [image_paths[i] for i in train_idx], [writer_class_labels[i] for i in train_idx], augment=True
+    )
+    val_ds = WriterIdentificationDataset(
+        [image_paths[i] for i in val_idx], [writer_class_labels[i] for i in val_idx], augment=False
+    )
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False)
+
+    num_classes = len(writer_id_to_class)
+    model = WriterIDClassifier(embedding_dim, num_classes, dropout).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    criterion = nn.CrossEntropyLoss()
+
+    print(f"\n=== Pretraining Writer Identification ({num_classes} writer, "
+          f"{len(train_idx)} anh train / {len(val_idx)} anh val) ===")
+    for epoch in range(1, epochs + 1):
+        model.train()
+        losses = []
+        for imgs, labels in train_loader:
+            imgs, labels = imgs.to(device), labels.to(device)
+            optimizer.zero_grad()
+            logits = model(imgs)
+            loss = criterion(logits, labels)
+            loss.backward()
+            optimizer.step()
+            losses.append(loss.item())
+
+        model.eval()
+        correct, total = 0, 0
+        with torch.no_grad():
+            for imgs, labels in val_loader:
+                imgs, labels = imgs.to(device), labels.to(device)
+                preds = model(imgs).argmax(dim=1)
+                correct += (preds == labels).sum().item()
+                total += len(labels)
+        val_acc = correct / total if total > 0 else 0.0
+        print(f"Pretrain Epoch {epoch:3d}/{epochs} | train_loss={np.mean(losses):.4f} | val_writer_id_acc={val_acc:.4f}")
+
+    print(f"Pretraining hoan tat. Writer-ID accuracy cuoi cung tren val noi bo: {val_acc:.4f}")
+    return model.embedding_net.state_dict()
 
 
 class SiameseNetwork(nn.Module):
@@ -601,12 +746,19 @@ def main():
     parser.add_argument("--patience", type=int, default=15)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--num_workers", type=int, default=0)
-    parser.add_argument("--backbone", choices=["custom", "resnet18"], default="resnet18",
+    parser.add_argument("--backbone", choices=["custom", "resnet18"], default="custom",
                          help="'custom': CNN tu xay tu dau (nhe, nhanh hon tren CPU). "
-                              "'resnet18': transfer learning tu ResNet18 pretrain ImageNet, "
-                              "dong bang lop dau, fine-tune layer3/layer4 + head moi (anh phai "
-                              "resize 224x224 va nhan 3 kenh, nang hon va cham hon 'custom' tren CPU "
-                              "nhung co the manh hon nho tan dung dac trung da hoc san).")
+                              "'resnet18': transfer learning tu ResNet18 pretrain ImageNet - DA THU "
+                              "NGHIEM va cho ket qua KEM HON 'custom' do domain gap qua lon giua anh "
+                              "tu nhien va chu ky nhi phan. Khuyen nghi dung 'custom'.")
+    parser.add_argument("--pretrain_writer_id", action="store_true", default=True,
+                         help="Pretrain embedding qua tac vu nhan dien writer (N-way classification, "
+                              "N = so writer trong tap train) truoc khi fine-tune Siamese bang "
+                              "contrastive loss - mo phong phuong phap SigNet (Dey et al. 2017), "
+                              "khong can du lieu ngoai CEDAR. Chi ap dung voi --backbone custom.")
+    parser.add_argument("--no_pretrain_writer_id", dest="pretrain_writer_id", action="store_false")
+    parser.add_argument("--pretrain_epochs", type=int, default=25)
+    parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
     parser.add_argument("--num_models", type=int, default=3,
                          help="So luong model trong ensemble. Moi model duoc train doc lap voi "
                               "seed khac nhau, ket qua cuoi la trung binh score cua ca ensemble. "
@@ -636,6 +788,19 @@ def main():
     tables_dir.mkdir(parents=True, exist_ok=True)
 
     # -----------------------------------------------------------------
+    # PRETRAINING: nhan dien writer (mo phong SigNet), chi khi backbone=custom
+    # -----------------------------------------------------------------
+    pretrained_state_dict = None
+    if args.pretrain_writer_id and args.backbone == "custom":
+        manifest_df = pd.read_csv(args.manifest)
+        writer_split_path = pairs_dir / "writer_split.txt"
+        train_writer_ids = parse_writer_split(writer_split_path, "train")
+        pretrained_state_dict = pretrain_writer_id(
+            manifest_df, train_writer_ids, args.embedding_dim, args.dropout, device,
+            epochs=args.pretrain_epochs, batch_size=args.batch_size, lr=args.lr,
+        )
+
+    # -----------------------------------------------------------------
     # Train ENSEMBLE gom args.num_models model doc lap, seed khac nhau
     # -----------------------------------------------------------------
     trained_models = []
@@ -647,6 +812,9 @@ def main():
         print(f"\n{'='*70}\nTRAIN MODEL {i+1}/{args.num_models} (seed={seed})\n{'='*70}")
 
         model = SiameseNetwork(embedding_dim=args.embedding_dim, dropout=args.dropout, backbone_type=args.backbone).to(device)
+        if pretrained_state_dict is not None:
+            model.embedding_net.load_state_dict(pretrained_state_dict)
+            print("Da nap trong so pretrain (Writer Identification) vao embedding_net.")
         if i == 0:
             total_params = sum(p.numel() for p in model.parameters())
             trainable_params_count = sum(p.numel() for p in model.parameters() if p.requires_grad)

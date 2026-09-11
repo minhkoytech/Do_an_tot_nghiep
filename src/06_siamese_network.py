@@ -470,6 +470,100 @@ class SiameseNetwork(nn.Module):
         return distance
 
 
+class SignatureTripletDataset(Dataset):
+    """
+    Xay triplet (anchor, positive, negative) TU CHINH pairs_train.csv da
+    co san - khong can sinh lai du lieu.
+
+    Vi sao thu Triplet Loss: nhieu nghien cuu ve xac thuc chu ky (Triplet
+    Network - Maergner et al. 2019; SigNet bien the dung triplet; Wan &
+    Zou 2020 "dual triplet loss"; Enhancing Signature Verification Using
+    Triplet Siamese Similarity Networks, MDPI 2024) deu bao cao Triplet
+    Loss cho ket qua tot hon Contrastive Loss cho DUNG bai toan nay. Ly
+    do: Triplet Loss hoc TUONG QUAN GIUA positive VA negative pair CUNG
+    LUC trong 1 buoc optimize (ep d(a,p) + margin < d(a,n)), thay vi hoc
+    tach biet tung cap mot cach doc lap nhu Contrastive Loss - cho tin
+    hieu gradient truc tiep huong toi "margin tuong doi" giua 2 loai cap,
+    thay vi 2 muc tieu tach roi (ep positive ve 0 VA ep negative vuot
+    margin).
+
+    - anchor, positive: lay tu cap genuine_genuine (2 chu ky that cung writer)
+    - negative: LAY UU TIEN tu skilled_forgery cua CUNG writer (hard
+      negative - dung uu tien cua GVHD: skilled forgery la truong hop
+      kho va quan trong nhat), neu writer khong co skilled_forgery thi
+      fallback sang random_forgery.
+    """
+
+    def __init__(self, pairs_df: pd.DataFrame, augment: bool = True):
+        self.positive_pairs = pairs_df[pairs_df["pair_type"] == "genuine_genuine"].reset_index(drop=True)
+        negatives_by_writer = {}
+        for writer_id, group in pairs_df[pairs_df["label"] == 0].groupby("writer_id_ref"):
+            skilled = group[group["pair_type"] == "skilled_forgery"]["query_path"].tolist()
+            random_neg = group[group["pair_type"] == "random_forgery"]["query_path"].tolist()
+            negatives_by_writer[writer_id] = {"skilled": skilled, "random": random_neg}
+        self.negatives_by_writer = negatives_by_writer
+        self.all_negative_paths = pairs_df[pairs_df["label"] == 0]["query_path"].tolist()
+        self.augment = augment
+        self._rng = np.random.RandomState(RANDOM_SEED)
+
+    def __len__(self):
+        return len(self.positive_pairs)
+
+    def _augment_image(self, img: np.ndarray) -> np.ndarray:
+        h, w = img.shape
+        angle = np.random.uniform(-8, 8)
+        tx = np.random.randint(-8, 9)
+        ty = np.random.randint(-8, 9)
+        matrix = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
+        matrix[0, 2] += tx
+        matrix[1, 2] += ty
+        return cv2.warpAffine(img, matrix, (w, h), borderValue=0)
+
+    def _load_image(self, path: str) -> torch.Tensor:
+        img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            raise FileNotFoundError(f"Khong doc duoc anh: {path}")
+        if self.augment:
+            img = self._augment_image(img)
+        img = img.astype(np.float32) / 255.0
+        return torch.from_numpy(img).unsqueeze(0)
+
+    def _sample_negative_path(self, writer_id) -> str:
+        writer_negs = self.negatives_by_writer.get(writer_id, {"skilled": [], "random": []})
+        # Uu tien 70% skilled forgery (hard negative), 30% random forgery -
+        # can bang giua "hoc phan biet truong hop kho" va "khong quen mat
+        # truong hop de", tranh chi hoc toan hard negative gay mat on dinh
+        # (dung nhu luu y trong literature ve triplet loss ve hard-negative).
+        if writer_negs["skilled"] and (not writer_negs["random"] or self._rng.rand() < 0.7):
+            return self._rng.choice(writer_negs["skilled"])
+        if writer_negs["random"]:
+            return self._rng.choice(writer_negs["random"])
+        if writer_negs["skilled"]:
+            return self._rng.choice(writer_negs["skilled"])
+        return self._rng.choice(self.all_negative_paths)  # fallback hiem khi xay ra
+
+    def __getitem__(self, idx):
+        row = self.positive_pairs.iloc[idx]
+        anchor = self._load_image(row["reference_path"])
+        positive = self._load_image(row["query_path"])
+        negative_path = self._sample_negative_path(row["writer_id_ref"])
+        negative = self._load_image(negative_path)
+        return anchor, positive, negative
+
+
+class TripletLoss(nn.Module):
+    """L = max(0, d(a,p) - d(a,n) + margin) - ham loss chuan cho Triplet Network."""
+
+    def __init__(self, margin: float = 1.0):
+        super().__init__()
+        self.margin = margin
+
+    def forward(self, anchor_emb, positive_emb, negative_emb):
+        d_pos = torch.nn.functional.pairwise_distance(anchor_emb, positive_emb)
+        d_neg = torch.nn.functional.pairwise_distance(anchor_emb, negative_emb)
+        return torch.clamp(d_pos - d_neg + self.margin, min=0).mean()
+
+
 class ContrastiveLoss(nn.Module):
     """L = (1-Y)*0.5*D^2 + Y*0.5*max(0, margin-D)^2 ; Y=1 neu non-match.
     Ho tro trong so per-sample (weight) de phat nang hon cac cap kho/quan
@@ -534,8 +628,12 @@ def compute_scores(model, loader, device):
     return np.concatenate(all_labels), np.concatenate(all_scores)
 
 
-def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr, margin, model_dir, weight_decay=1e-4, model_name="siamese_best"):
-    criterion = ContrastiveLoss(margin=margin)
+def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr, margin, model_dir,
+                   weight_decay=1e-4, model_name="siamese_best", loss_type="contrastive"):
+    if loss_type == "triplet":
+        criterion = TripletLoss(margin=margin)
+    else:
+        criterion = ContrastiveLoss(margin=margin)
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.Adam(trainable_params, lr=lr, weight_decay=weight_decay)
     # Giam learning rate khi val EER khong cai thien sau 3 epoch - giup model
@@ -551,16 +649,32 @@ def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr,
     for epoch in range(1, epochs + 1):
         model.train()
         epoch_losses = []
-        for img1, img2, label, weight in train_loader:
-            img1, img2, label, weight = img1.to(device), img2.to(device), label.to(device), weight.to(device)
-            optimizer.zero_grad()
-            distance = model(img1, img2)
-            loss = criterion(distance, label, weight)
-            loss.backward()
-            optimizer.step()
-            epoch_losses.append(loss.item())
+
+        if loss_type == "triplet":
+            for anchor, positive, negative in train_loader:
+                anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
+                optimizer.zero_grad()
+                emb_a = model.embedding_net(anchor)
+                emb_p = model.embedding_net(positive)
+                emb_n = model.embedding_net(negative)
+                loss = criterion(emb_a, emb_p, emb_n)
+                loss.backward()
+                optimizer.step()
+                epoch_losses.append(loss.item())
+        else:
+            for img1, img2, label, weight in train_loader:
+                img1, img2, label, weight = img1.to(device), img2.to(device), label.to(device), weight.to(device)
+                optimizer.zero_grad()
+                distance = model(img1, img2)
+                loss = criterion(distance, label, weight)
+                loss.backward()
+                optimizer.step()
+                epoch_losses.append(loss.item())
 
         train_loss = float(np.mean(epoch_losses))
+        # Danh gia EER tren val LUON dung SignaturePairDataset (reference/query/
+        # label) DU loss_type la gi - vi day la chuan chung, dam bao so sanh
+        # cong bang giua contrastive va triplet, va giua Siamese vs RF/SVM.
         val_labels, val_scores = compute_scores(model, val_loader, device)
         _, val_eer = find_eer_threshold(val_labels, val_scores)
         scheduler.step(val_eer)
@@ -751,11 +865,18 @@ def main():
                               "'resnet18': transfer learning tu ResNet18 pretrain ImageNet - DA THU "
                               "NGHIEM va cho ket qua KEM HON 'custom' do domain gap qua lon giua anh "
                               "tu nhien va chu ky nhi phan. Khuyen nghi dung 'custom'.")
-    parser.add_argument("--pretrain_writer_id", action="store_true", default=True,
+    parser.add_argument("--pretrain_writer_id", action="store_true", default=False,
                          help="Pretrain embedding qua tac vu nhan dien writer (N-way classification, "
                               "N = so writer trong tap train) truoc khi fine-tune Siamese bang "
                               "contrastive loss - mo phong phuong phap SigNet (Dey et al. 2017), "
-                              "khong can du lieu ngoai CEDAR. Chi ap dung voi --backbone custom.")
+                              "khong can du lieu ngoai CEDAR. DA THU NGHIEM va cho ket qua KEM HON "
+                              "(EER tang) do chi 35 writer x ~20 anh moi writer la QUA IT de pretrain "
+                              "N-way classification ma khong bi overfit nghiem trong. Mac dinh TAT.")
+    parser.add_argument("--loss", choices=["contrastive", "triplet"], default="triplet",
+                         help="'triplet': nhieu nghien cuu (Triplet Network, Wan&Zou 2020 dual triplet "
+                              "loss, MDPI 2024 tSSN) bao cao Triplet Loss hoc metric space tot hon "
+                              "Contrastive Loss cho dung bai toan xac thuc chu ky. 'contrastive': loss "
+                              "cu, van giu de so sanh/fallback.")
     parser.add_argument("--no_pretrain_writer_id", dest="pretrain_writer_id", action="store_false")
     parser.add_argument("--pretrain_epochs", type=int, default=25)
     parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
@@ -767,7 +888,7 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Dang su dung device: {device}")
-    print(f"Backbone: {args.backbone}")
+    print(f"Backbone: {args.backbone} | Loss: {args.loss} | Pretrain writer-ID: {args.pretrain_writer_id}")
 
     pairs_dir = Path(args.pairs_dir)
     train_pairs = pd.read_csv(pairs_dir / "pairs_train.csv")
@@ -776,7 +897,10 @@ def main():
     print(f"Train pairs: {len(train_pairs)} | Val pairs: {len(val_pairs)} | Test pairs: {len(test_pairs)}")
 
     use_pretrained = (args.backbone == "resnet18")
-    train_loader = DataLoader(SignaturePairDataset(train_pairs, augment=True, use_pretrained=use_pretrained), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
+    if args.loss == "triplet":
+        train_loader = DataLoader(SignatureTripletDataset(train_pairs, augment=True), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
+    else:
+        train_loader = DataLoader(SignaturePairDataset(train_pairs, augment=True, use_pretrained=use_pretrained), batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, drop_last=True)
     val_loader = DataLoader(SignaturePairDataset(val_pairs, augment=False, use_pretrained=use_pretrained), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
     test_loader = DataLoader(SignaturePairDataset(test_pairs, augment=False, use_pretrained=use_pretrained), batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
@@ -824,6 +948,7 @@ def main():
             model, train_loader, val_loader, device,
             epochs=args.epochs, patience=args.patience, lr=args.lr, margin=args.margin,
             model_dir=model_dir, weight_decay=args.weight_decay, model_name=f"siamese_model_{i}",
+            loss_type=args.loss,
         )
         trained_models.append(model)
         all_histories.append(history)

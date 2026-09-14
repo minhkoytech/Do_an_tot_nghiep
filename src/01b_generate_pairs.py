@@ -226,6 +226,12 @@ def main():
     parser.add_argument("--max_pos_pairs_per_writer", type=int, default=40)
     parser.add_argument("--max_skilled_neg_pairs_per_writer", type=int, default=40)
     parser.add_argument("--num_random_neg_pairs_per_writer", type=int, default=20)
+    parser.add_argument("--seed", type=int, default=RANDOM_SEED,
+                         help="Seed dung de chia writer va sinh pairs. Doi seed nay se cho ra "
+                              "MOT CACH CHIA WRITER KHAC (35 writer nao vao train, 10 writer nao "
+                              "vao test se thay doi) - dung de kiem tra hieu nang co on dinh giua "
+                              "cac cach chia khac nhau hay khong (vd --seed 1, --seed 2, --seed 3), "
+                              "thay vi chi dua vao 1 lan chia duy nhat.")
     args = parser.parse_args()
 
     manifest_df = pd.read_csv(args.manifest)
@@ -236,6 +242,7 @@ def main():
         manifest_df["writer_id"].unique(),
         val_size=args.val_writers,
         test_size=args.test_writers,
+        random_state=args.seed,
     )
 
     # Luu lai danh sach writer trong tung split de kiem tra / tai lap sau nay.
@@ -250,6 +257,7 @@ def main():
             max_pos_pairs_per_writer=args.max_pos_pairs_per_writer,
             max_skilled_neg_pairs_per_writer=args.max_skilled_neg_pairs_per_writer,
             num_random_neg_pairs_per_writer=args.num_random_neg_pairs_per_writer,
+            seed=args.seed,
         )
         out_path = output_dir / f"pairs_{split_name}.csv"
         pairs_df.to_csv(out_path, index=False)

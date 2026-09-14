@@ -1,3 +1,38 @@
+"""
+01_preprocessing.py
+--------------------
+Tien xu ly anh chu ky viet tay (CEDAR-style dataset).
+
+Khop voi cau truc thu muc project DO_AN_TOT_NGHIEP:
+    data/raw/cedar/full_org/   (chu ky that)
+    data/raw/cedar/full_forg/  (chu ky gia)
+    data/processed/            (output cua script nay)
+
+Cac buoc:
+    1. Doc anh, chuyen ve grayscale (neu can).
+    2. Nhi phan hoa bang nguong Otsu (dao nguoc de net chu = 255, nen = 0).
+    3. Khu nhieu bang morphological opening + loai bo cac connected
+       component qua nho (dom nhieu, hat bui khi scan).
+    4. Crop theo bounding box cua net chu (bo vien trang thua).
+    5. Resize ve kich thuoc chuan va dat vao chinh giua canvas co dinh
+       (giu ty le, khong lam meo net chu).
+
+Ket qua: anh grayscale, nen den (0), net chu trang (255), kich thuoc
+CANVAS_SIZE, da can giua -> san sang de trich xuat dac trung hoac dua
+vao CNN.
+
+Cach dung nhanh:
+    python preprocess.py --input_dir /path/to/CEDAR --output_dir /path/to/processed
+
+Cau truc input_dir mac dinh (chuan CEDAR public):
+    CEDAR/
+        full_org/   original_{writer}_{sample}.png   (chu ky that)
+        full_forg/  forgeries_{writer}_{sample}.png  (chu ky gia)
+
+Neu bo du lieu cua ban dat ten khac, chi can sua ham `parse_filename`
+va bien GENUINE_DIR / FORGED_DIR ben duoi.
+"""
+
 import os
 import re
 import argparse
@@ -54,9 +89,24 @@ def remove_noise(binary_img: np.ndarray, min_area: int = MIN_COMPONENT_AREA) -> 
       - Morphological opening de loai bo cac diem nhieu li ti.
       - Loai bo cac connected component co dien tich nho hon min_area
         (thuong la hat bui / vet ban khi scan, khong phai net chu).
+
+    AN TOAN VOI NET MONG: neu phep opening xoa sach TOAN BO noi dung
+    anh (truong hop net chu qua mong, vd 1 pixel - phat hien qua kiem
+    thu voi du lieu tong hop), bo qua buoc opening va chi loc theo dien
+    tich connected component tren anh nhi phan GOC. Tranh lam mat toan
+    bo chu ky chi vi net qua mong so voi kernel opening.
     """
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
     opened = cv2.morphologyEx(binary_img, cv2.MORPH_OPEN, kernel)
+
+    # An toan voi net mong: neu phep opening xoa mat PHAN LON noi dung
+    # (con lai duoi 20% so pixel ban dau - truong hop net chu qua mong so
+    # voi kernel opening, cac pixel con sot lai thuong la manh vun roi
+    # rac se bi loc het boi min_area ben duoi), bo qua buoc opening va
+    # chi loc theo dien tich connected component tren anh nhi phan GOC.
+    original_count = np.count_nonzero(binary_img)
+    if original_count > 0 and np.count_nonzero(opened) < 0.2 * original_count:
+        opened = binary_img
 
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
         opened, connectivity=8

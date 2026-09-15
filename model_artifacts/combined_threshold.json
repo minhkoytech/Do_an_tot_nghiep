@@ -1,0 +1,21 @@
+{
+  "threshold": 0.41490008876604634,
+  "rf_params": {
+    "n_estimators": 200,
+    "max_depth": 10
+  },
+  "classical_features": [
+    "delta_glcm_correlation",
+    "delta_hu_1",
+    "delta_hu_2",
+    "delta_hu_3",
+    "delta_hu_4",
+    "delta_aspect_ratio",
+    "delta_pixel_density",
+    "delta_glcm_homogeneity",
+    "delta_glcm_energy",
+    "delta_num_crossings",
+    "delta_baseline_ratio"
+  ],
+  "embedding_dim": 64
+}

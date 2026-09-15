@@ -1,116 +1,3 @@
-"""
-06_siamese_network.py
-----------------------
-Siamese Network (CNN backbone + Contrastive Loss) - "Huong tiep can de
-xuat chinh" trong de cuong (Buoc 5).
-
-Kien truc:
-    Anh reference va anh query duoc dua qua CUNG MOT CNN (shared weights)
-    de tao ra 2 vector embedding. Khoang cach Euclidean giua 2 embedding
-    duoc dung de quyet dinh match/non-match - CUNG FORMULATION voi
-    Pairwise Classical ML baseline o 05_pairwise_baseline.py:
-        (Reference, Query) -> Distance -> Match/Non-match
-    Nho vay so sanh Siamese vs Pairwise RF/SVM la cong bang (dung gop y
-    so 4 cua GVHD) - cung writer split, cung dinh nghia pair, cung cach
-    danh gia.
-
-Contrastive Loss (Hadsell et al.):
-    L = (1-Y) * 0.5 * D^2  +  Y * 0.5 * max(0, margin - D)^2
-    trong do Y = 1 neu KHONG khop (non-match), Y = 0 neu khop (match).
-    Luu y: label trong pairs_*.csv dinh nghia NGUOC lai (label=1 la
-    match), nen Y = 1 - label khi tinh loss.
-    Y cua cong thuc: cap giong nhau (match) -> D cang nho cang tot (ep
-    ve 0). Cap khac nhau (non-match) -> D cang lon cang tot, nhung chi
-    can lon hon margin la du (khong ep vo cuc).
-
-Ky luat train/val/test (giong het 05_pairwise_baseline.py):
-    - Huan luyen tren train, EARLY STOPPING dua tren EER cua VAL (khong
-      phai chi dua tren validation loss - EER moi la chi so thuc su
-      quan tam trong bai toan xac thuc).
-    - Threshold quyet dinh (EER) duoc CHON va CO DINH tren VAL.
-    - Test set CHI danh gia DUY NHAT MOT LAN sau khi model + threshold
-      da co dinh.
-
-Sau khi danh gia Siamese tren test, script se TU DONG load lai RF/SVM
-da luu o 05_pairwise_baseline.py (model_artifacts/) va tinh lai diem tren
-CUNG test set, tao ra MOT bang so sanh + MOT bieu do ROC chung cho ca 3
-model - day la ket qua so sanh Classical ML vs Deep Learning ma GVHD yeu
-cau o gop y so 4.
-
-Ensemble (mac dinh 3 model doc lap, --num_models de doi):
-    Thay vi train 1 model duy nhat, script train NHIEU model Siamese
-    doc lap (seed khoi tao khac nhau), roi lay TRUNG BINH score (khoang
-    cach) cua ca ensemble de ra quyet dinh cuoi cung. Day la ky thuat
-    giam phuong sai (variance reduction) chuan muc trong ML, thuong cho
-    ket qua on dinh va chinh xac hon 1 model don le - danh doi la thoi
-    gian train tang len (gap args.num_models lan).
-
-Pretraining Writer Identification (mac dinh BAT, --no_pretrain_writer_id de tat):
-    Truoc khi fine-tune bang contrastive loss, embedding duoc PRETRAIN
-    qua mot tac vu khac: phan loai xem mot anh chu ky GENUINE thuoc ve
-    writer nao trong so cac writer cua tap TRAIN (N-way classification,
-    N = so writer train). Day la ky thuat CHINH ma SigNet (Dey et al.
-    2017) dung de dat EER thap tren CEDAR - ho pretrain tren GPDS (581
-    writer). O day dung CHINH 35 writer cua tap train CEDAR lam 35 lop
-    phan loai - KHONG can them du lieu ngoai, van dung phamvi CEDAR-only
-    cua de cuong. (Da thu ImageNet transfer learning truoc do va cho
-    ket qua KEM HON do domain gap qua lon giua anh tu nhien va chu ky
-    nhi phan - writer-ID pretraining tren CHINH du lieu chu ky la huong
-    hop ly hon.) Sau khi pretrain, trong so embedding_net duoc dung lam
-    diem khoi tao cho CA 3 model trong ensemble, truoc khi fine-tune
-    doc lap bang contrastive loss (su da dang cua ensemble den tu thu
-    tu xao tron du lieu va dropout khac nhau giua cac lan fine-tune).
-
-Weighted Contrastive Loss:
-    Cap skilled_forgery duoc nhan trong so 1.5x trong loss (so voi 1.0x
-    cho genuine_genuine va random_forgery), vi day la truong hop KHO va
-    QUAN TRONG NHAT trong ngan hang (dung uu tien cua GVHD o gop y so 1).
-
-Output:
-    model_artifacts/siamese_model_{0,1,2}.pt (trong so tung model trong ensemble)
-    model_artifacts/siamese_threshold.json
-    results/tables/siamese_test_summary.csv
-    results/tables/siamese_per_pairtype.csv
-    results/tables/siamese_per_writer.csv
-    results/tables/final_model_comparison.csv        (RF vs SVM vs Ensemble Siamese)
-    results/figures/siamese_training_curve.png       (cua model dau tien trong ensemble)
-    results/figures/final_model_comparison_roc.png   (ROC 3 model tren cung 1 hinh)
-
-Cach dung (khong can tham so, path da khop san):
-    cd src
-    python 06_siamese_network.py
-
-Luu y ve thoi gian chay: voi ensemble 3 model, tong thoi gian se GAP 3
-LAN so voi train 1 model. Neu ban da tang so pairs o 01b_generate_pairs.py
-(khuyen nghi), thoi gian moi epoch cung tang tuong ung. Tren may CPU thong
-thuong, tong thoi gian co the tu 30 phut den vai gio tuy cau hinh may va
-so luong pairs/model. Neu muon nhanh hon, giam --num_models xuong 1 hoac 2.
-Neu co GPU NVIDIA, script se TU DONG dung GPU (khong can chinh gi them).
-
-Ky vong ve EER (de dua vao bao cao, tranh ky vong sai lech):
-    Cac nghien cuu writer-independent (WI) nghiem tuc tren CEDAR thuong
-    dat EER trong khoang 2-8% (Kalera 2004: 21.9%, Kumar 2012: 8.33%,
-    Kumar&Puhan 2014: 6.02%, Guerbai 2015: 5.60%, Zois 2019: 2.90%).
-    Mot so paper cong bo EER < 1% (vd SigNet cua Dey et al. 2017,
-    SigScatNet) DEU dua tren PRETRAINING mot CNN lon (hang trieu tham
-    so) tren mot bo du lieu PHU rat lon (GPDS voi 581 writer dung cho
-    writer-identification pretext task) roi moi transfer sang CEDAR -
-    day la loi the du lieu ma de cuong nay CHU DONG KHONG su dung (GVHD
-    da xac nhan CEDAR la du, khong can them dataset khac). Vi vay EER
-    dat duoc trong pham vi do an nay (chi dung CEDAR, khong pretrain
-    tren bo du lieu ngoai) can duoc so sanh voi nhom phuong phap WI
-    KHONG dung pretraining/transfer learning tu bo du lieu lon, thay vi
-    so sanh truc tiep voi cac con so SOTA <1% - su so sanh do la khap
-    khieng ve mat phuong phap luan.
-
-Nguon tham khao (dua vao bao cao neu can trich dan):
-    - Dey et al. (2017), "SigNet: Convolutional Siamese Network for
-      Writer Independent Offline Signature Verification", arXiv:1707.02131
-    - Souza et al. (2021), "A white-box analysis on the writer-independent
-      dichotomy transformation...", arxiv:2004.03370 (bang tong hop EER
-      cac phuong phap WI tren CEDAR, Table 12)
-"""
-
 import argparse
 import json
 import re
@@ -163,9 +50,6 @@ torch.manual_seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 
 
-# ---------------------------------------------------------------------------
-# Dataset: doc cap anh truc tiep tu pairs_*.csv
-# ---------------------------------------------------------------------------
 class SignaturePairDataset(Dataset):
     """
     Neu augment=True (chi dung cho TRAIN), moi anh se duoc xoay + dich
@@ -528,40 +412,69 @@ class SignatureTripletDataset(Dataset):
         img = img.astype(np.float32) / 255.0
         return torch.from_numpy(img).unsqueeze(0)
 
-    def _sample_negative_path(self, writer_id) -> str:
+    def _sample_negative_path(self, writer_id):
+        """Tra ve (negative_path, negative_type) - negative_type de biet ap dung margin nao."""
         writer_negs = self.negatives_by_writer.get(writer_id, {"skilled": [], "random": []})
         # Uu tien 70% skilled forgery (hard negative), 30% random forgery -
         # can bang giua "hoc phan biet truong hop kho" va "khong quen mat
         # truong hop de", tranh chi hoc toan hard negative gay mat on dinh
         # (dung nhu luu y trong literature ve triplet loss ve hard-negative).
         if writer_negs["skilled"] and (not writer_negs["random"] or self._rng.rand() < 0.7):
-            return self._rng.choice(writer_negs["skilled"])
+            return self._rng.choice(writer_negs["skilled"]), "skilled"
         if writer_negs["random"]:
-            return self._rng.choice(writer_negs["random"])
+            return self._rng.choice(writer_negs["random"]), "random"
         if writer_negs["skilled"]:
-            return self._rng.choice(writer_negs["skilled"])
-        return self._rng.choice(self.all_negative_paths)  # fallback hiem khi xay ra
+            return self._rng.choice(writer_negs["skilled"]), "skilled"
+        return self._rng.choice(self.all_negative_paths), "random"  # fallback hiem khi xay ra
 
     def __getitem__(self, idx):
         row = self.positive_pairs.iloc[idx]
         anchor = self._load_image(row["reference_path"])
         positive = self._load_image(row["query_path"])
-        negative_path = self._sample_negative_path(row["writer_id_ref"])
+        negative_path, negative_type = self._sample_negative_path(row["writer_id_ref"])
         negative = self._load_image(negative_path)
-        return anchor, positive, negative
+        # is_skilled=1.0 neu negative la skilled_forgery, 0.0 neu la random_forgery
+        # - dung de TripletLoss ap dung margin RIENG cho tung loai (xem TripletLoss)
+        is_skilled = torch.tensor(1.0 if negative_type == "skilled" else 0.0, dtype=torch.float32)
+        return anchor, positive, negative, is_skilled
 
 
 class TripletLoss(nn.Module):
-    """L = max(0, d(a,p) - d(a,n) + margin) - ham loss chuan cho Triplet Network."""
+    """
+    L = max(0, d(a,p) - d(a,n) + margin) - ham loss chuan cho Triplet Network.
 
-    def __init__(self, margin: float = 1.0):
+    ASYMMETRIC MARGIN: margin_skilled > margin_random. Muc tieu la GIAM
+    FAR (dac biet FAR o skilled_forgery - chi so ngan hang quan tam nhat).
+    Voi margin lon hon cho skilled_forgery, model bi EP phai day khoang
+    cach toi cap (anchor, skilled_negative) ra XA HON so voi yeu cau doi
+    voi random_forgery - tuc la hoc mot "vung dem an toan" rong hon RIENG
+    cho truong hop kho/quan trong nay, thay vi doi xu nhu nhau voi moi
+    loai negative (nhu margin co dinh truoc day).　Day la thay doi trong
+    QUA TRINH HOC (khong phai chi dich threshold sau khi train xong nhu
+    10_threshold_analysis.py) - nham that su giam FAR thay vi chi danh
+    doi FAR/FRR qua threshold.
+    """
+
+    def __init__(self, margin: float = 1.0, margin_skilled: float = None):
         super().__init__()
         self.margin = margin
+        # Mac dinh margin_skilled = 1.5x margin thuong, neu khong truyen rieng
+        self.margin_skilled = margin_skilled if margin_skilled is not None else margin * 1.5
 
-    def forward(self, anchor_emb, positive_emb, negative_emb):
+    def forward(self, anchor_emb, positive_emb, negative_emb, is_skilled=None):
         d_pos = torch.nn.functional.pairwise_distance(anchor_emb, positive_emb)
         d_neg = torch.nn.functional.pairwise_distance(anchor_emb, negative_emb)
-        return torch.clamp(d_pos - d_neg + self.margin, min=0).mean()
+
+        if is_skilled is not None:
+            margin_per_sample = torch.where(
+                is_skilled > 0.5,
+                torch.full_like(d_pos, self.margin_skilled),
+                torch.full_like(d_pos, self.margin),
+            )
+        else:
+            margin_per_sample = self.margin
+
+        return torch.clamp(d_pos - d_neg + margin_per_sample, min=0).mean()
 
 
 class ContrastiveLoss(nn.Module):
@@ -629,9 +542,9 @@ def compute_scores(model, loader, device):
 
 
 def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr, margin, model_dir,
-                   weight_decay=1e-4, model_name="siamese_best", loss_type="contrastive"):
+                   weight_decay=1e-4, model_name="siamese_best", loss_type="contrastive", margin_skilled=None):
     if loss_type == "triplet":
-        criterion = TripletLoss(margin=margin)
+        criterion = TripletLoss(margin=margin, margin_skilled=margin_skilled)
     else:
         criterion = ContrastiveLoss(margin=margin)
     trainable_params = [p for p in model.parameters() if p.requires_grad]
@@ -651,13 +564,14 @@ def train_siamese(model, train_loader, val_loader, device, epochs, patience, lr,
         epoch_losses = []
 
         if loss_type == "triplet":
-            for anchor, positive, negative in train_loader:
+            for anchor, positive, negative, is_skilled in train_loader:
                 anchor, positive, negative = anchor.to(device), positive.to(device), negative.to(device)
+                is_skilled = is_skilled.to(device)
                 optimizer.zero_grad()
                 emb_a = model.embedding_net(anchor)
                 emb_p = model.embedding_net(positive)
                 emb_n = model.embedding_net(negative)
-                loss = criterion(emb_a, emb_p, emb_n)
+                loss = criterion(emb_a, emb_p, emb_n, is_skilled)
                 loss.backward()
                 optimizer.step()
                 epoch_losses.append(loss.item())
@@ -855,6 +769,11 @@ def main():
     parser.add_argument("--dropout", type=float, default=0.5)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--margin", type=float, default=1.0)
+    parser.add_argument("--margin_skilled", type=float, default=None,
+                         help="Margin RIENG cho triplet co negative la skilled_forgery (mac dinh: "
+                              "1.5x --margin). Tang gia tri nay de EP model day chu ky gia co ky "
+                              "nang ra xa hon, nham GIAM FAR o skilled_forgery - chi so ngan hang "
+                              "quan tam nhat. Chi co tac dung khi --loss triplet.")
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--epochs", type=int, default=60)
     parser.add_argument("--patience", type=int, default=15)
@@ -889,6 +808,10 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Dang su dung device: {device}")
     print(f"Backbone: {args.backbone} | Loss: {args.loss} | Pretrain writer-ID: {args.pretrain_writer_id}")
+    if args.loss == "triplet":
+        effective_margin_skilled = args.margin_skilled if args.margin_skilled is not None else args.margin * 1.5
+        print(f"Margin: {args.margin} (random_forgery) | {effective_margin_skilled} (skilled_forgery, "
+              f"nham GIAM FAR skilled_forgery)")
 
     pairs_dir = Path(args.pairs_dir)
     train_pairs = pd.read_csv(pairs_dir / "pairs_train.csv")
@@ -948,7 +871,7 @@ def main():
             model, train_loader, val_loader, device,
             epochs=args.epochs, patience=args.patience, lr=args.lr, margin=args.margin,
             model_dir=model_dir, weight_decay=args.weight_decay, model_name=f"siamese_model_{i}",
-            loss_type=args.loss,
+            loss_type=args.loss, margin_skilled=args.margin_skilled,
         )
         trained_models.append(model)
         all_histories.append(history)

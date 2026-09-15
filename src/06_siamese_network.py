@@ -1,3 +1,116 @@
+"""
+06_siamese_network.py
+----------------------
+Siamese Network (CNN backbone + Contrastive Loss) - "Huong tiep can de
+xuat chinh" trong de cuong (Buoc 5).
+
+Kien truc:
+    Anh reference va anh query duoc dua qua CUNG MOT CNN (shared weights)
+    de tao ra 2 vector embedding. Khoang cach Euclidean giua 2 embedding
+    duoc dung de quyet dinh match/non-match - CUNG FORMULATION voi
+    Pairwise Classical ML baseline o 05_pairwise_baseline.py:
+        (Reference, Query) -> Distance -> Match/Non-match
+    Nho vay so sanh Siamese vs Pairwise RF/SVM la cong bang (dung gop y
+    so 4 cua GVHD) - cung writer split, cung dinh nghia pair, cung cach
+    danh gia.
+
+Contrastive Loss (Hadsell et al.):
+    L = (1-Y) * 0.5 * D^2  +  Y * 0.5 * max(0, margin - D)^2
+    trong do Y = 1 neu KHONG khop (non-match), Y = 0 neu khop (match).
+    Luu y: label trong pairs_*.csv dinh nghia NGUOC lai (label=1 la
+    match), nen Y = 1 - label khi tinh loss.
+    Y cua cong thuc: cap giong nhau (match) -> D cang nho cang tot (ep
+    ve 0). Cap khac nhau (non-match) -> D cang lon cang tot, nhung chi
+    can lon hon margin la du (khong ep vo cuc).
+
+Ky luat train/val/test (giong het 05_pairwise_baseline.py):
+    - Huan luyen tren train, EARLY STOPPING dua tren EER cua VAL (khong
+      phai chi dua tren validation loss - EER moi la chi so thuc su
+      quan tam trong bai toan xac thuc).
+    - Threshold quyet dinh (EER) duoc CHON va CO DINH tren VAL.
+    - Test set CHI danh gia DUY NHAT MOT LAN sau khi model + threshold
+      da co dinh.
+
+Sau khi danh gia Siamese tren test, script se TU DONG load lai RF/SVM
+da luu o 05_pairwise_baseline.py (model_artifacts/) va tinh lai diem tren
+CUNG test set, tao ra MOT bang so sanh + MOT bieu do ROC chung cho ca 3
+model - day la ket qua so sanh Classical ML vs Deep Learning ma GVHD yeu
+cau o gop y so 4.
+
+Ensemble (mac dinh 3 model doc lap, --num_models de doi):
+    Thay vi train 1 model duy nhat, script train NHIEU model Siamese
+    doc lap (seed khoi tao khac nhau), roi lay TRUNG BINH score (khoang
+    cach) cua ca ensemble de ra quyet dinh cuoi cung. Day la ky thuat
+    giam phuong sai (variance reduction) chuan muc trong ML, thuong cho
+    ket qua on dinh va chinh xac hon 1 model don le - danh doi la thoi
+    gian train tang len (gap args.num_models lan).
+
+Pretraining Writer Identification (mac dinh BAT, --no_pretrain_writer_id de tat):
+    Truoc khi fine-tune bang contrastive loss, embedding duoc PRETRAIN
+    qua mot tac vu khac: phan loai xem mot anh chu ky GENUINE thuoc ve
+    writer nao trong so cac writer cua tap TRAIN (N-way classification,
+    N = so writer train). Day la ky thuat CHINH ma SigNet (Dey et al.
+    2017) dung de dat EER thap tren CEDAR - ho pretrain tren GPDS (581
+    writer). O day dung CHINH 35 writer cua tap train CEDAR lam 35 lop
+    phan loai - KHONG can them du lieu ngoai, van dung phamvi CEDAR-only
+    cua de cuong. (Da thu ImageNet transfer learning truoc do va cho
+    ket qua KEM HON do domain gap qua lon giua anh tu nhien va chu ky
+    nhi phan - writer-ID pretraining tren CHINH du lieu chu ky la huong
+    hop ly hon.) Sau khi pretrain, trong so embedding_net duoc dung lam
+    diem khoi tao cho CA 3 model trong ensemble, truoc khi fine-tune
+    doc lap bang contrastive loss (su da dang cua ensemble den tu thu
+    tu xao tron du lieu va dropout khac nhau giua cac lan fine-tune).
+
+Weighted Contrastive Loss:
+    Cap skilled_forgery duoc nhan trong so 1.5x trong loss (so voi 1.0x
+    cho genuine_genuine va random_forgery), vi day la truong hop KHO va
+    QUAN TRONG NHAT trong ngan hang (dung uu tien cua GVHD o gop y so 1).
+
+Output:
+    model_artifacts/siamese_model_{0,1,2}.pt (trong so tung model trong ensemble)
+    model_artifacts/siamese_threshold.json
+    results/tables/siamese_test_summary.csv
+    results/tables/siamese_per_pairtype.csv
+    results/tables/siamese_per_writer.csv
+    results/tables/final_model_comparison.csv        (RF vs SVM vs Ensemble Siamese)
+    results/figures/siamese_training_curve.png       (cua model dau tien trong ensemble)
+    results/figures/final_model_comparison_roc.png   (ROC 3 model tren cung 1 hinh)
+
+Cach dung (khong can tham so, path da khop san):
+    cd src
+    python 06_siamese_network.py
+
+Luu y ve thoi gian chay: voi ensemble 3 model, tong thoi gian se GAP 3
+LAN so voi train 1 model. Neu ban da tang so pairs o 01b_generate_pairs.py
+(khuyen nghi), thoi gian moi epoch cung tang tuong ung. Tren may CPU thong
+thuong, tong thoi gian co the tu 30 phut den vai gio tuy cau hinh may va
+so luong pairs/model. Neu muon nhanh hon, giam --num_models xuong 1 hoac 2.
+Neu co GPU NVIDIA, script se TU DONG dung GPU (khong can chinh gi them).
+
+Ky vong ve EER (de dua vao bao cao, tranh ky vong sai lech):
+    Cac nghien cuu writer-independent (WI) nghiem tuc tren CEDAR thuong
+    dat EER trong khoang 2-8% (Kalera 2004: 21.9%, Kumar 2012: 8.33%,
+    Kumar&Puhan 2014: 6.02%, Guerbai 2015: 5.60%, Zois 2019: 2.90%).
+    Mot so paper cong bo EER < 1% (vd SigNet cua Dey et al. 2017,
+    SigScatNet) DEU dua tren PRETRAINING mot CNN lon (hang trieu tham
+    so) tren mot bo du lieu PHU rat lon (GPDS voi 581 writer dung cho
+    writer-identification pretext task) roi moi transfer sang CEDAR -
+    day la loi the du lieu ma de cuong nay CHU DONG KHONG su dung (GVHD
+    da xac nhan CEDAR la du, khong can them dataset khac). Vi vay EER
+    dat duoc trong pham vi do an nay (chi dung CEDAR, khong pretrain
+    tren bo du lieu ngoai) can duoc so sanh voi nhom phuong phap WI
+    KHONG dung pretraining/transfer learning tu bo du lieu lon, thay vi
+    so sanh truc tiep voi cac con so SOTA <1% - su so sanh do la khap
+    khieng ve mat phuong phap luan.
+
+Nguon tham khao (dua vao bao cao neu can trich dan):
+    - Dey et al. (2017), "SigNet: Convolutional Siamese Network for
+      Writer Independent Offline Signature Verification", arXiv:1707.02131
+    - Souza et al. (2021), "A white-box analysis on the writer-independent
+      dichotomy transformation...", arxiv:2004.03370 (bang tong hop EER
+      cac phuong phap WI tren CEDAR, Table 12)
+"""
+
 import argparse
 import json
 import re
@@ -13,8 +126,12 @@ import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
-import torchvision
 from torch.utils.data import Dataset, DataLoader
+# Luu y: KHONG import torchvision o day. torchvision CHI can thiet khi
+# dung --backbone resnet18 (transfer learning) - de khong bat buoc nguoi
+# dung phai cai them thu vien nay khi chi dung --backbone custom (mac
+# dinh, duoc khuyen nghi). Xem import cuc bo (lazy import) trong class
+# ResNetEmbedding ben duoi.
 
 from sklearn.metrics import (
     roc_curve, roc_auc_score, accuracy_score, precision_score,
@@ -50,6 +167,9 @@ torch.manual_seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 
 
+# ---------------------------------------------------------------------------
+# Dataset: doc cap anh truc tiep tu pairs_*.csv
+# ---------------------------------------------------------------------------
 class SignaturePairDataset(Dataset):
     """
     Neu augment=True (chi dung cho TRAIN), moi anh se duoc xoay + dich
@@ -187,6 +307,8 @@ class ResNetEmbedding(nn.Module):
 
     def __init__(self, embedding_dim=64, dropout=0.5, freeze_early_layers=True):
         super().__init__()
+        import torchvision  # lazy import: chi can khi thuc su dung backbone nay
+
         weights = torchvision.models.ResNet18_Weights.IMAGENET1K_V1
         backbone = torchvision.models.resnet18(weights=weights)
 

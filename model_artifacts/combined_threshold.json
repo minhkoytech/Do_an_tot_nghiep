@@ -1,8 +1,8 @@
 {
-  "threshold": 0.41490008876604634,
+  "threshold": 0.37378696678959805,
   "rf_params": {
-    "n_estimators": 200,
-    "max_depth": 10
+    "n_estimators": 400,
+    "max_depth": 20
   },
   "classical_features": [
     "delta_glcm_correlation",

@@ -1,9 +1,9 @@
 error_type,pair_type,writer_id_ref,score,distance,figure
-false_accept,skilled_forgery,13,-1.846771001815796,1.846771001815796,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_accept_1.png
-false_accept,skilled_forgery,50,-2.604931116104126,2.604931116104126,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_accept_2.png
-false_accept,skilled_forgery,50,-2.6722142696380615,2.6722142696380615,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_accept_3.png
-false_accept,skilled_forgery,13,-2.712960958480835,2.712960958480835,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_accept_4.png
-false_reject,genuine_genuine,27,-13.705544471740723,13.705544471740723,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_reject_1.png
-false_reject,genuine_genuine,33,-13.47214412689209,13.47214412689209,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_reject_2.png
-false_reject,genuine_genuine,33,-13.382146835327148,13.382146835327148,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_reject_3.png
-false_reject,genuine_genuine,6,-12.178622245788574,12.178622245788574,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_reject_4.png
+false_accept,skilled_forgery,50,-2.4882147312164307,2.4882147312164307,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_accept_1.png
+false_accept,skilled_forgery,50,-2.7734134197235107,2.7734134197235107,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_accept_2.png
+false_accept,skilled_forgery,50,-3.1370420455932617,3.1370420455932617,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_accept_3.png
+false_accept,skilled_forgery,27,-3.27276349067688,3.27276349067688,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_accept_4.png
+false_reject,genuine_genuine,13,-15.404614448547363,15.404614448547363,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_reject_1.png
+false_reject,genuine_genuine,27,-15.399560928344727,15.399560928344727,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_reject_2.png
+false_reject,genuine_genuine,33,-15.204083442687988,15.204083442687988,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_reject_3.png
+false_reject,genuine_genuine,20,-14.654250144958496,14.654250144958496,D:\GitHub\Do_an_tot_nghiep\results\figures\gradcam_false_reject_4.png

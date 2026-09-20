@@ -1,5 +1,5 @@
 {
-  "threshold": -6.887430667877197,
+  "threshold": -7.012048244476318,
   "embedding_dim": 64,
   "margin": 1.0,
   "num_models": 3

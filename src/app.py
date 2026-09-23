@@ -57,8 +57,32 @@ preprocess_mod = load_module("01_preprocessing.py", "preprocess_mod")
 features_mod = load_module("03_features.py", "features_mod")
 siamese_mod = load_module("06_siamese_network.py", "siamese_mod")
 combined_mod = load_module("08_combined_model.py", "combined_mod")
+gradcam_mod = None
+try:
+    gradcam_mod = load_module("09_error_analysis_gradcam.py", "gradcam_mod")
+except Exception:
+    pass  # Grad-CAM la tinh nang tuy chon, khong lam sap app neu file 09 chua co
 
 SELECTED_FEATURES = siamese_mod.SELECTED_FEATURES
+
+# ---------------------------------------------------------------------------
+# MODEL RA QUYET DINH - chi MOT model duy nhat duoc dung de ket luan
+# Khop/Khong khop. Doi gia tri o day de chuyen sang model khac:
+#   "combined" - dac trung thu cong + embedding CNN (tot nhat theo
+#                10_threshold_analysis.py; can da chay 08_combined_model.py)
+#   "siamese"  - Siamese Network (ensemble)
+#   "rf"       - Random Forest pairwise
+#   "svm"      - SVM pairwise
+# Neu chon "combined" nhung chua co model Combined, app tu dong dung "siamese".
+# ---------------------------------------------------------------------------
+DECISION_MODEL = "combined"
+
+MODEL_DISPLAY_NAMES = {
+    "combined": "Combined (đặc trưng thủ công + học sâu)",
+    "siamese": "Siamese Network",
+    "rf": "Random Forest",
+    "svm": "SVM",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +216,70 @@ def compute_combined_verdict(models_dict, ref_path: str, query_path: str):
 # ---------------------------------------------------------------------------
 # Giao dien Streamlit
 # ---------------------------------------------------------------------------
+def compute_gradcam_for_pair(models_dict, ref_path: str, query_path: str):
+    """
+    Tinh Grad-CAM TRUC TIEP cho cap anh vua upload, dung model Siamese
+    dau tien trong ensemble (nhat quan voi 09_error_analysis_gradcam.py -
+    Grad-CAM can 1 do thi tinh toan ro rang, dung ca ensemble se kho
+    dien giai hon). Tra ve 2 anh overlay (numpy RGB) cho reference/query.
+    """
+    if gradcam_mod is None:
+        return None, None
+    device = models_dict["device"]
+    model = models_dict["siamese_models"][0]
+    target_layer = model.embedding_net.conv[-2]
+
+    img_a = gradcam_mod.load_image_tensor(ref_path, device)
+    img_b = gradcam_mod.load_image_tensor(query_path, device)
+    cam_a, cam_b, _ = gradcam_mod.compute_pair_gradcam(model, target_layer, img_a, img_b)
+
+    overlay_a = gradcam_mod.overlay_heatmap(ref_path, cam_a)
+    overlay_b = gradcam_mod.overlay_heatmap(query_path, cam_b)
+    return overlay_a, overlay_b
+
+
+def render_gauge_svg(value01: float, color: str, size: int = 84) -> str:
+    """SVG gauge tron - tuong tu ban frontend HTML, dung lai trong Streamlit qua unsafe_allow_html."""
+    r = 34
+    circ = 2 * 3.14159265 * r
+    offset = circ * (1 - value01)
+    cx = cy = size / 2
+    return f'''
+    <div style="position:relative; width:{size}px; height:{size}px; margin:0 auto;">
+      <svg width="{size}" height="{size}" style="transform:rotate(-90deg);">
+        <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="6"/>
+        <circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="6"
+          stroke-linecap="round" stroke-dasharray="{circ:.1f}" stroke-dashoffset="{offset:.1f}"/>
+      </svg>
+      <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+        font-family:'Bebas Neue',sans-serif; font-size:1.15rem; color:{color};">{round(value01*100)}</div>
+    </div>'''
+
+
+def normalize_score_for_display(score: float, model_key: str) -> float:
+    """Chuan hoa score ve [0,1] CHI DE HIEN THI gauge - khong doi logic quyet dinh that (van dung score/threshold goc)."""
+    import math
+    if model_key == "siamese":
+        return max(0.0, min(1.0, 1 / (1 + math.exp(-score / 3))))
+    if model_key == "svm":
+        return max(0.0, min(1.0, 1 / (1 + math.exp(-score))))
+    return max(0.0, min(1.0, score))
+
+
+@st.cache_data
+def load_performance_metrics():
+    """Doc bang so sanh 4 model tu ket qua da co san (neu co) de hien thi trong phan 'Ve he thong'."""
+    candidates = [
+        PROJECT_ROOT / "results" / "tables" / "final_model_comparison_with_combined.csv",
+        PROJECT_ROOT / "results" / "tables" / "final_model_comparison.csv",
+    ]
+    for path in candidates:
+        if path.exists():
+            import pandas as pd
+            return pd.read_csv(path)
+    return None
+
+
 def main():
     st.set_page_config(page_title="SignatureVerify", page_icon="✍️", layout="wide")
 
@@ -216,12 +304,43 @@ def main():
         div[data-testid="stStatusWidget"] { display: none; }
         #stDecoration { display: none; }
 
-        .stApp { background-color: #0A0A0A; }
+        .stApp {
+            background: #0A0A0A;
+            background-image:
+                radial-gradient(circle at 15% 20%, rgba(229,9,20,0.08), transparent 35%),
+                radial-gradient(circle at 85% 75%, rgba(176,38,255,0.07), transparent 35%),
+                radial-gradient(circle at 60% 15%, rgba(255,61,110,0.05), transparent 30%);
+            background-attachment: fixed;
+        }
         .block-container {
             padding-top: 0 !important;
             max-width: 980px;
             margin: 0 auto;
         }
+
+        /* Thanh gradient nhieu mau o dau trang - lay cam hung tu Netflix,
+           thay vi mau do phang don dieu */
+        .top-gradient-bar {
+            height: 5px;
+            width: 100%;
+            background: linear-gradient(90deg, #E50914 0%, #FF3D6E 35%, #B026FF 70%, #4A1FBE 100%);
+            border-radius: 0 0 6px 6px;
+            margin-bottom: 0;
+        }
+
+        /* Blob gradient trang tri - hieu ung mo (blur) tao chieu sau,
+           dat o goc card giong phong cach Netflix hien dai */
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(28px);
+            opacity: 0.35;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .blob-red { background: radial-gradient(circle, #E50914, transparent 70%); }
+        .blob-purple { background: radial-gradient(circle, #B026FF, transparent 70%); }
+        .blob-pink { background: radial-gradient(circle, #FF3D6E, transparent 70%); }
 
         /* Custom scrollbar */
         ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -268,7 +387,12 @@ def main():
             margin-bottom: 0;
             line-height: 1;
         }
-        .hero-accent { color: #E50914; }
+        .hero-accent {
+            background: linear-gradient(90deg, #E50914, #FF3D6E, #B026FF);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
         .hero-subtitle {
             color: #999999;
             font-size: 1.02rem;
@@ -304,7 +428,7 @@ def main():
 
         /* Nut chinh - do Netflix, bo tron, hover sang hon + shadow */
         .stButton > button {
-            background-color: #E50914;
+            background: linear-gradient(90deg, #E50914, #FF3D6E);
             color: #FFFFFF;
             border: none;
             border-radius: 8px;
@@ -316,9 +440,9 @@ def main():
             transition: all 0.2s ease;
         }
         .stButton > button:hover {
-            background-color: #F6121D;
+            background: linear-gradient(90deg, #F6121D, #FF5C87);
             transform: translateY(-1px);
-            box-shadow: 0 6px 20px rgba(229, 9, 20, 0.5);
+            box-shadow: 0 6px 24px rgba(255, 61, 110, 0.45);
         }
         .stButton > button:active { transform: translateY(0); }
 
@@ -393,8 +517,21 @@ def main():
             border-radius: 12px;
             padding: 20px 16px;
             border: 1px solid #232323;
+            position: relative;
+            overflow: hidden;
             transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
         }
+        .model-card::after {
+            content: "";
+            position: absolute;
+            width: 90px; height: 90px;
+            bottom: -30px; right: -30px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(229,9,20,0.25), transparent 70%);
+            filter: blur(10px);
+            z-index: 0;
+        }
+        .model-card > * { position: relative; z-index: 1; }
         .model-card:hover {
             transform: translateY(-4px);
             border-color: #E50914;
@@ -437,6 +574,46 @@ def main():
             border-top: 1px solid #1F1F1F;
             padding-top: 16px;
             margin-top: 8px;
+        }
+
+        /* Feature grid - "Vi sao chon he thong nay" - 4 o, blob mau goc
+           duoi, lay cam hung tu section "Them ly do de tham gia" cua
+           Netflix nhung noi dung rieng cho bai toan xac thuc chu ky */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin: 32px 0 44px 0;
+        }
+        .feature-card {
+            background: linear-gradient(160deg, #171426, #0f0d1a);
+            border: 1px solid #262238;
+            border-radius: 14px;
+            padding: 24px 20px;
+            position: relative;
+            overflow: hidden;
+            min-height: 150px;
+        }
+        .feature-card-title {
+            font-weight: 700;
+            font-size: 1.05rem;
+            color: #FFFFFF;
+            margin-bottom: 8px;
+            position: relative;
+            z-index: 1;
+        }
+        .feature-card-desc {
+            font-size: 0.85rem;
+            color: #9A94B5;
+            line-height: 1.55;
+            position: relative;
+            z-index: 1;
+        }
+        .feature-card-icon {
+            font-size: 1.6rem;
+            margin-bottom: 10px;
+            position: relative;
+            z-index: 1;
         }
 
         /* Ghi de mau mac dinh cua Streamlit cho st.success/info/warning/error */
@@ -486,6 +663,8 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
+    st.markdown('<div class="top-gradient-bar"></div>', unsafe_allow_html=True)
+
     st.markdown(
         '<div class="navbar">'
         '<div class="navbar-logo">SIGNATURE<span>VERIFY</span></div>'
@@ -509,6 +688,41 @@ def main():
         unsafe_allow_html=True,
     )
 
+    st.markdown(
+        '<p class="section-header">VÌ SAO CHỌN HỆ THỐNG NÀY</p>'
+        '<div class="feature-grid">'
+        '<div class="feature-card">'
+        '<div class="blob blob-red" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
+        '<div class="feature-card-icon">🧬</div>'
+        '<div class="feature-card-title">Kết hợp 2 hướng tiếp cận</div>'
+        '<div class="feature-card-desc">Đặc trưng thống kê thủ công (Hu Moments, GLCM) kết hợp '
+        'embedding học sâu từ Siamese Network.</div>'
+        '</div>'
+        '<div class="feature-card">'
+        '<div class="blob blob-purple" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
+        '<div class="feature-card-icon">📊</div>'
+        '<div class="feature-card-title">So sánh 4 mô hình</div>'
+        '<div class="feature-card-desc">RF, SVM, Siamese Network và Combined được đánh giá song song, '
+        'minh bạch từng kết quả.</div>'
+        '</div>'
+        '<div class="feature-card">'
+        '<div class="blob blob-pink" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
+        '<div class="feature-card-icon">🎯</div>'
+        '<div class="feature-card-title">Hiệu chỉnh theo rủi ro</div>'
+        '<div class="feature-card-desc">Ngưỡng quyết định chọn bằng EER trên tập validation, phù hợp '
+        'với mức rủi ro ngân hàng chấp nhận.</div>'
+        '</div>'
+        '<div class="feature-card">'
+        '<div class="blob blob-red" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
+        '<div class="feature-card-icon">🔍</div>'
+        '<div class="feature-card-title">Phân tích minh bạch</div>'
+        '<div class="feature-card-desc">Grad-CAM trực quan hóa vùng ảnh mô hình tập trung khi ra '
+        'quyết định.</div>'
+        '</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
     if not MODEL_DIR.exists() or not any(MODEL_DIR.iterdir()):
         st.error(
             f"Chưa tìm thấy model đã train tại `{MODEL_DIR}`. Hãy chạy đủ các bước "
@@ -521,112 +735,166 @@ def main():
     with st.spinner("Đang tải model..."):
         models_dict = load_all_models()
 
-    n_siamese = len(models_dict["siamese_models"])
-    status_msg = f"Đã tải {n_siamese} model Siamese (ensemble) + RF + SVM"
-    if models_dict["has_combined"]:
-        status_msg += " + Combined (đề xuất chính)."
-    else:
-        status_msg += ". Chưa có model Combined — chạy `08_combined_model.py` để bổ sung."
-    st.success(status_msg)
+    # Neu da chay 11_optimize_accuracy.py, dung model + nguong toi uu
+    # accuracy tu decision_config.json (ghi de DECISION_MODEL/threshold).
+    decision_cfg = None
+    cfg_path = MODEL_DIR / "decision_config.json"
+    if cfg_path.exists():
+        try:
+            with open(cfg_path) as f:
+                decision_cfg = json.load(f)
+        except Exception:
+            decision_cfg = None
+
+    active_model_name = decision_cfg["model"] if decision_cfg else DECISION_MODEL
+    if active_model_name == "combined" and not models_dict["has_combined"]:
+        active_model_name = "siamese"
+
+    if decision_cfg and decision_cfg.get("model") == active_model_name:
+        thr = float(decision_cfg["threshold"])
+        if active_model_name == "combined":
+            models_dict["combined_threshold"] = thr
+        elif active_model_name == "siamese":
+            models_dict["siamese_threshold"] = thr
+        else:
+            models_dict["pairwise_thresholds"][f"{active_model_name}_threshold"] = thr
+
+    msg = f"Mô hình đang sử dụng: {MODEL_DISPLAY_NAMES.get(active_model_name, active_model_name)}"
+    if decision_cfg:
+        msg += f" · ngưỡng tối ưu accuracy (test: {decision_cfg.get('accuracy_test', 0):.1%})"
+    st.success(msg)
 
     st.markdown('<p class="section-header">TẢI LÊN CHỮ KÝ</p>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
-        ref_file = st.file_uploader("Chữ ký mẫu (reference)", type=["png", "jpg", "jpeg", "bmp"])
+        ref_files = st.file_uploader(
+            "Chữ ký mẫu (reference) — nên tải 3-5 mẫu để chính xác hơn",
+            type=["png", "jpg", "jpeg", "bmp"], accept_multiple_files=True,
+        )
     with col2:
         query_file = st.file_uploader("Chữ ký cần kiểm tra (query)", type=["png", "jpg", "jpeg", "bmp"])
 
-    if ref_file and query_file:
+    show_gradcam = st.checkbox(
+        "🔬 Hiển thị Grad-CAM (giải thích vùng ảnh mô hình tập trung khi ra quyết định)",
+        value=False,
+        disabled=(gradcam_mod is None),
+        help="Cần có file 09_error_analysis_gradcam.py trong src/" if gradcam_mod is None else None,
+    )
+
+    if ref_files and query_file:
         if st.button("🔍  SO SÁNH CHỮ KÝ", type="primary", use_container_width=True):
             with tempfile.TemporaryDirectory() as tmp:
                 tmp_dir = Path(tmp)
                 with st.spinner("Đang tiền xử lý ảnh..."):
-                    ref_processed = preprocess_uploaded_image(ref_file, tmp_dir)
+                    ref_processed_list = [
+                        preprocess_uploaded_image(f, tmp_dir) for f in ref_files
+                    ]
+                    ref_processed = ref_processed_list[0]
                     query_processed = preprocess_uploaded_image(query_file, tmp_dir)
 
                 st.markdown('<p class="section-header">ẢNH SAU TIỀN XỬ LÝ</p>', unsafe_allow_html=True)
                 pcol1, pcol2 = st.columns(2)
                 with pcol1:
-                    st.image(ref_processed, caption="Reference", use_container_width=True)
+                    cap = "Reference" if len(ref_processed_list) == 1 else f"Reference (1/{len(ref_processed_list)} mẫu)"
+                    st.image(ref_processed, caption=cap, use_container_width=True)
                 with pcol2:
                     st.image(query_processed, caption="Query", use_container_width=True)
 
-                with st.spinner("Đang chạy các mô hình..."):
-                    siamese_score, siamese_threshold, siamese_match = compute_siamese_verdict(
-                        models_dict, ref_processed, query_processed
-                    )
-                    rf_score, rf_threshold, rf_match = compute_classical_verdict(
-                        models_dict, ref_processed, query_processed, "rf"
-                    )
-                    svm_score, svm_threshold, svm_match = compute_classical_verdict(
-                        models_dict, ref_processed, query_processed, "svm"
-                    )
+                with st.spinner("Đang chạy mô hình..."):
+                    # CHI CHAY MOT MODEL DUY NHAT (xem DECISION_MODEL o dau file).
+                    # MULTI-REFERENCE ENROLLMENT: neu nguoi dung tai len nhieu
+                    # chu ky mau, tinh diem cua query voi TUNG mau roi lay TRUNG
+                    # BINH. Day la cach he thong sinh trac hoc thuc te lam
+                    # (dang ky nhieu mau khi mo tai khoan) - giam nhieu do mot
+                    # lan ky bat thuong, cho quyet dinh on dinh hon 1 mau don.
+                    active_model = active_model_name
 
-                    cards = [
-                        {"name": "Siamese Network", "score": siamese_score, "match": siamese_match, "featured": False},
-                        {"name": "Random Forest", "score": rf_score, "match": rf_match, "featured": False},
-                        {"name": "SVM", "score": svm_score, "match": svm_match, "featured": False},
-                    ]
+                    def score_one(ref_path):
+                        if active_model == "combined":
+                            return compute_combined_verdict(models_dict, ref_path, query_processed)
+                        if active_model == "siamese":
+                            return compute_siamese_verdict(models_dict, ref_path, query_processed)
+                        return compute_classical_verdict(models_dict, ref_path, query_processed, active_model)
 
-                    if models_dict["has_combined"]:
-                        combined_score, combined_threshold, combined_match = compute_combined_verdict(
-                            models_dict, ref_processed, query_processed
-                        )
-                        cards.insert(0, {"name": "Combined ⭐", "score": combined_score, "match": combined_match, "featured": True})
-                        main_match = combined_match
-                        main_model_label = "Combined Model"
-                    else:
-                        main_match = siamese_match
-                        main_model_label = "Siamese Network"
+                    per_ref = [score_one(rp) for rp in ref_processed_list]
+                    score = float(np.mean([r[0] for r in per_ref]))
+                    threshold = per_ref[0][1]
+                    main_match = score >= threshold
+                    main_model_label = MODEL_DISPLAY_NAMES.get(active_model, active_model)
+                    if len(per_ref) > 1:
+                        main_model_label += f" · trung bình {len(per_ref)} mẫu"
 
-                # ----- Ket luan chinh -----
+                # ----- Ket luan -----
                 verdict_class = "verdict-match" if main_match else "verdict-nomatch"
                 verdict_text = "KHỚP" if main_match else "KHÔNG KHỚP"
                 verdict_sub = "Cùng người ký" if main_match else "Nghi ngờ giả mạo"
                 st.markdown(
                     f'<div class="verdict-card {verdict_class}">'
                     f'<p class="verdict-label">{verdict_text}</p>'
-                    f'<p class="verdict-sub">{verdict_sub} · Kết luận theo {main_model_label}</p>'
+                    f'<p class="verdict-sub">{verdict_sub} · {main_model_label}</p>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
-                # ----- Grid card ket qua tung model -----
-                st.markdown('<p class="section-header">CHI TIẾT TỪNG MÔ HÌNH</p>', unsafe_allow_html=True)
-                cards_html = '<div class="model-grid">'
-                for c in cards:
-                    badge_class = "badge-match" if c["match"] else "badge-nomatch"
-                    badge_text = "Khớp" if c["match"] else "Không khớp"
-                    score_color = "#2ecc71" if c["match"] else "#E50914"
-                    featured_class = "featured" if c["featured"] else ""
-                    cards_html += (
-                        f'<div class="model-card {featured_class}">'
-                        f'<div class="model-name">{c["name"]}</div>'
-                        f'<p class="model-score" style="color:{score_color}">{c["score"]:.3f}</p>'
-                        f'<span class="model-badge {badge_class}">{badge_text}</span>'
-                        f'</div>'
-                    )
-                cards_html += '</div>'
-                st.markdown(cards_html, unsafe_allow_html=True)
+                # ----- Gauge diem so cua model ra quyet dinh -----
+                gauge_color = "#2ecc71" if main_match else "#FF3B44"
+                val01 = normalize_score_for_display(score, active_model)
+                badge_class = "badge-match" if main_match else "badge-nomatch"
+                badge_text = "Khớp" if main_match else "Không khớp"
+                st.markdown(
+                    '<div class="model-grid" style="grid-template-columns:1fr; max-width:260px; margin:0 auto 28px;">'
+                    '<div class="model-card featured">'
+                    f'<div class="model-name">Độ tương đồng</div>'
+                    f'{render_gauge_svg(val01, gauge_color)}'
+                    f'<span class="model-badge {badge_class}">{badge_text}</span>'
+                    '</div></div>',
+                    unsafe_allow_html=True,
+                )
 
-                agree_count = sum(c["match"] for c in cards)
-                total_models = len(cards)
-                if agree_count in (0, total_models):
-                    st.info("✓ Tất cả model đều đồng thuận kết quả — độ tin cậy cao.")
-                else:
-                    st.warning(
-                        f"⚠ Các model KHÔNG đồng thuận ({agree_count}/{total_models} model kết luận 'Khớp'). "
-                        "Đây là trường hợp khó, nên xem xét thêm bằng mắt hoặc chuyên gia."
-                    )
+                # ----- Grad-CAM (neu duoc bat) -----
+                if show_gradcam and gradcam_mod is not None:
+                    st.markdown('<p class="section-header">GRAD-CAM · VÙNG ẢNH MÔ HÌNH TẬP TRUNG</p>', unsafe_allow_html=True)
+                    with st.spinner("Đang tính Grad-CAM..."):
+                        overlay_ref, overlay_query = compute_gradcam_for_pair(models_dict, ref_processed, query_processed)
+                    if overlay_ref is not None:
+                        gcol1, gcol2 = st.columns(2)
+                        with gcol1:
+                            st.image(overlay_ref, caption="Reference — vùng đỏ/vàng = ảnh hưởng lớn đến quyết định", use_container_width=True)
+                        with gcol2:
+                            st.image(overlay_query, caption="Query — vùng đỏ/vàng = ảnh hưởng lớn đến quyết định", use_container_width=True)
+                    else:
+                        st.warning("Không tính được Grad-CAM (thiếu module 09_error_analysis_gradcam.py).")
 
                 st.markdown(
-                    '<p class="footnote">Điểm số Siamese là -khoảng cách embedding. Điểm RF/Combined là '
-                    'xác suất phân loại. Điểm SVM là decision function. Ngưỡng quyết định chọn bằng '
-                    'Equal Error Rate (EER) trên tập validation, cố định trước khi đánh giá test.</p>',
+                    '<p class="footnote">Gauge hiển thị độ tương đồng đã chuẩn hóa về thang 0-100 CHỈ ĐỂ '
+                    'TRỰC QUAN; quyết định Khớp/Không khớp dùng đúng điểm số và ngưỡng gốc của mô hình. '
+                    'Ngưỡng quyết định được chọn trên tập validation và cố định trước khi đánh giá test.</p>',
                     unsafe_allow_html=True,
                 )
     else:
         st.info("Tải lên cả 2 ảnh chữ ký để bắt đầu so sánh.")
+
+    # ----- Section "Ve he thong" - hien thi so lieu hieu nang that -----
+    with st.expander("📊 VỀ HỆ THỐNG · Số liệu hiệu năng đã đánh giá"):
+        metrics_df = load_performance_metrics()
+        if metrics_df is not None:
+            display_cols = [c for c in ["model", "accuracy", "roc_auc", "FAR", "FRR", "precision", "recall", "f1"] if c in metrics_df.columns]
+            st.dataframe(metrics_df[display_cols].round(4), use_container_width=True, hide_index=True)
+            st.caption(
+                "Kết quả đánh giá trên tập test (writer-independent, không rò rỉ dữ liệu). "
+                "Model Combined kết hợp đặc trưng thủ công (Hu Moments, GLCM...) và embedding từ Siamese Network."
+            )
+        else:
+            st.caption(
+                "Chưa tìm thấy file kết quả (results/tables/final_model_comparison*.csv). "
+                "Chạy 05_pairwise_baseline.py, 06_siamese_network.py, 08_combined_model.py để tạo số liệu."
+            )
+        st.markdown(
+            "**Phương pháp**: kết hợp đặc trưng thống kê thủ công (Hu Moments, GLCM, tỷ lệ nét, "
+            "số điểm giao cắt) và học sâu (Siamese Network, kiến trúc CNN + Contrastive/Triplet Loss). "
+            "Đánh giá trên bộ dữ liệu CEDAR, chia writer-independent (writer ở tập test không xuất hiện "
+            "ở tập train), ngưỡng quyết định chọn bằng Equal Error Rate trên tập validation."
+        )
 
 
 if __name__ == "__main__":

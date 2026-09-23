@@ -164,6 +164,15 @@ def preprocess_image(image_path: str, canvas_size=CANVAS_SIZE) -> np.ndarray:
     if img is None:
         raise FileNotFoundError(f"Khong doc duoc anh: {image_path}")
 
+    # TU NHAN DIEN MAU NEN: chu ky tren giay (nhu CEDAR goc) co nen SANG,
+    # net TOI. Neu anh dau vao co nen TOI (vd nguoi dung upload anh da tien
+    # xu ly tu data/processed/ - nen den net trang), dao nguoc lai truoc khi
+    # nhi phan hoa. Neu khong, anh se bi tien xu ly 2 lan -> dao mau -> nen
+    # bi coi la "net chu" (~96% pixel) -> moi cap anh deu trong giong nhau.
+    # Khong anh huong den du lieu train (anh CEDAR goc luon nen sang).
+    if img.mean() < 127:
+        img = 255 - img
+
     binary = binarize(img)
     cleaned = remove_noise(binary)
     cropped = crop_to_signature(cleaned)

@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SignatureVerify — Xác thực chữ ký AI</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #060608;
+    color: #fff;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* ---------- Khoi gradient troi noi (background 3D depth) ---------- */
+  .orb { position: fixed; border-radius: 50%; filter: blur(90px); opacity: 0.35; z-index: 0; pointer-events: none; }
+  .orb1 { width: 520px; height: 520px; background: radial-gradient(circle, #E50914, transparent 70%); top: -150px; left: -120px; animation: float1 22s ease-in-out infinite; }
+  .orb2 { width: 460px; height: 460px; background: radial-gradient(circle, #B026FF, transparent 70%); bottom: -120px; right: -100px; animation: float2 26s ease-in-out infinite; }
+  .orb3 { width: 380px; height: 380px; background: radial-gradient(circle, #FF3D6E, transparent 70%); top: 45%; left: 55%; animation: float3 19s ease-in-out infinite; }
+  @keyframes float1 { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(60px,50px) scale(1.15);} }
+  @keyframes float2 { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(-50px,-40px) scale(0.9);} }
+  @keyframes float3 { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(-70px,30px) scale(1.1);} }
+
+  .page { position: relative; z-index: 1; max-width: 1080px; margin: 0 auto; padding: 0 24px 80px; }
+
+  /* ---------- Navbar kinh mo (glassmorphism) ---------- */
+  nav {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 24px; margin: 0 -24px 50px;
+    background: rgba(6,6,8,0.6);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; letter-spacing: 1.5px; }
+  .logo span { background: linear-gradient(90deg,#E50914,#FF3D6E,#B026FF); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .nav-tag { font-size: 0.72rem; color: #777; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
+
+  /* ---------- Hero ---------- */
+  .hero { padding: 30px 0 60px; text-align: left; }
+  .hero-title { font-family: 'Bebas Neue', sans-serif; font-size: clamp(2.6rem, 6vw, 4.6rem); line-height: 1.02; letter-spacing: 2px; }
+  .hero-title .accent { background: linear-gradient(90deg,#E50914,#FF3D6E,#B026FF); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .hero-sub { color: #999; font-size: 1.02rem; max-width: 600px; margin-top: 18px; line-height: 1.65; }
+  .hero-badges { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+  .badge { background: rgba(255,255,255,0.04); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 7px 16px; font-size: 0.78rem; color: #aaa; }
+  .badge b { color: #FF3D6E; }
+
+  /* ---------- Section header ---------- */
+  .section-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.55rem; letter-spacing: 1.5px; margin: 8px 0 20px; display:flex; align-items:center; gap:10px; }
+  .section-title::before { content:""; width:4px; height:22px; background:linear-gradient(180deg,#E50914,#B026FF); border-radius:2px; }
+
+  /* ---------- Feature grid (kinh mo + blob) ---------- */
+  .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px,1fr)); gap: 16px; margin-bottom: 56px; }
+  .feature-card {
+    position: relative; overflow: hidden; border-radius: 18px; padding: 26px 22px; min-height: 160px;
+    background: rgba(255,255,255,0.035); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: transform 0.3s ease, border-color 0.3s ease;
+    transform-style: preserve-3d; will-change: transform;
+  }
+  .feature-card:hover { border-color: rgba(229,9,20,0.5); }
+  .feature-card .blob { position:absolute; width:110px; height:110px; border-radius:50%; filter: blur(24px); opacity:0.4; bottom:-30px; right:-30px; z-index:0; }
+  .feature-card > * { position: relative; z-index: 1; }
+  .feature-icon { font-size: 1.7rem; margin-bottom: 10px; }
+  .feature-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 8px; }
+  .feature-desc { font-size: 0.85rem; color: #9a94b0; line-height: 1.55; }
+
+  /* ---------- Upload zone ---------- */
+  .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 24px; }
+  @media (max-width: 640px) { .upload-grid { grid-template-columns: 1fr; } }
+  .upload-zone {
+    position: relative; border-radius: 18px; padding: 32px 20px; text-align: center; cursor: pointer;
+    background: rgba(255,255,255,0.03); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1.5px dashed rgba(255,255,255,0.16);
+    transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+    transform-style: preserve-3d; will-change: transform;
+    min-height: 220px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  }
+  .upload-zone.dragover, .upload-zone:hover { border-color: #E50914; background: rgba(229,9,20,0.06); }
+  .upload-zone input { display: none; }
+  .upload-icon { font-size: 2.2rem; margin-bottom: 10px; opacity: 0.8; }
+  .upload-label { font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; }
+  .upload-hint { font-size: 0.78rem; color: #666; }
+  .upload-preview { max-width: 100%; max-height: 140px; border-radius: 10px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.1); }
+  .upload-filename { font-size: 0.8rem; color: #aaa; word-break: break-all; padding: 0 8px; }
+
+  /* ---------- Nut chinh ---------- */
+  .btn-main {
+    width: 100%; padding: 16px; border: none; border-radius: 12px; cursor: pointer;
+    background: linear-gradient(90deg,#E50914,#FF3D6E); color:#fff; font-weight:700; font-size:1.05rem;
+    letter-spacing: 0.5px; box-shadow: 0 8px 28px rgba(229,9,20,0.35);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    margin-bottom: 50px;
+  }
+  .btn-main:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 36px rgba(255,61,110,0.5); }
+  .btn-main:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* Checkbox Grad-CAM */
+  .gradcam-toggle {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding: 14px 16px;
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+    cursor: pointer; user-select: none; font-size: 0.88rem; color: #ccc;
+  }
+  .gradcam-toggle input { width: 18px; height: 18px; accent-color: #E50914; cursor: pointer; }
+
+  /* Section "Ve he thong" */
+  .about-section {
+    margin-top: 60px; border-radius: 18px; padding: 28px;
+    background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.07);
+  }
+  .about-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.85rem; }
+  .about-table th { text-align: left; color: #888; font-weight: 600; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.1); text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.5px; }
+  .about-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #ddd; }
+  .about-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .about-desc { color: #999; font-size: 0.86rem; line-height: 1.6; margin-top: 18px; }
+
+  /* ---------- Loading ---------- */
+  .loading-wrap { display: none; text-align: center; padding: 50px 0; }
+  .loading-wrap.active { display: block; }
+  .spinner-3d {
+    width: 64px; height: 64px; margin: 0 auto 18px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, #E50914, #FF3D6E, #B026FF, #E50914);
+    animation: spin 1s linear infinite;
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 8px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 8px));
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { color: #888; font-size: 0.9rem; }
+
+  /* ---------- Ket qua ---------- */
+  .results-wrap { display: none; }
+  .results-wrap.active { display: block; animation: fadeUp 0.5s ease; }
+  @keyframes fadeUp { from { opacity:0; transform: translateY(20px);} to { opacity:1; transform:translateY(0);} }
+
+  .preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+  @media (max-width: 640px) { .preview-grid { grid-template-columns: 1fr; } }
+  .preview-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 14px; text-align: center; }
+  .preview-card img { max-width: 100%; border-radius: 8px; background: #000; }
+  .preview-card .cap { font-size: 0.78rem; color: #888; margin-top: 8px; }
+
+  .verdict-card {
+    position: relative; overflow: hidden; border-radius: 22px; padding: 48px 28px; text-align: center; margin-bottom: 34px;
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    transform-style: preserve-3d; will-change: transform;
+  }
+  .verdict-match { background: linear-gradient(150deg, rgba(20,80,45,0.5), rgba(10,30,18,0.5)); border: 1px solid rgba(46,204,113,0.4); }
+  .verdict-nomatch { background: linear-gradient(150deg, rgba(90,15,20,0.5), rgba(30,8,10,0.5)); border: 1px solid rgba(229,9,20,0.5); }
+  .verdict-icon { font-size: 3rem; margin-bottom: 8px; }
+  .verdict-label { font-family: 'Bebas Neue', sans-serif; font-size: 3rem; letter-spacing: 2px; }
+  .verdict-match .verdict-label { color: #2ecc71; }
+  .verdict-nomatch .verdict-label { color: #FF3B44; }
+  .verdict-sub { color: #999; font-size: 0.92rem; margin-top: 8px; }
+
+  .model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 16px; margin-bottom: 30px; }
+  .model-card {
+    position: relative; overflow: hidden; border-radius: 16px; padding: 24px 18px; text-align: center;
+    background: rgba(255,255,255,0.03); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: transform 0.3s ease, border-color 0.3s ease;
+    transform-style: preserve-3d; will-change: transform;
+  }
+  .model-card.featured { border-color: rgba(229,9,20,0.6); background: linear-gradient(160deg, rgba(60,15,15,0.4), rgba(255,255,255,0.02)); }
+  .model-card .blob { position:absolute; width:100px; height:100px; border-radius:50%; background:radial-gradient(circle,#E50914,transparent 70%); filter:blur(20px); opacity:0.3; bottom:-30px; right:-30px; z-index:0; }
+  .model-card > * { position: relative; z-index: 1; }
+  .model-name { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #ccc; margin-bottom: 14px; }
+  .gauge-wrap { position: relative; width: 88px; height: 88px; margin: 0 auto 12px; }
+  .gauge-wrap svg { transform: rotate(-90deg); }
+  .gauge-bg { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 7; }
+  .gauge-fg { fill: none; stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset 1s cubic-bezier(0.65,0,0.35,1); }
+  .gauge-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family:'Bebas Neue',sans-serif; font-size: 1.3rem; }
+  .model-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
+  .badge-match { background: rgba(46,204,113,0.15); color: #2ecc71; }
+  .badge-nomatch { background: rgba(229,9,20,0.15); color: #FF3B44; }
+
+  .agree-note { padding: 14px 18px; border-radius: 12px; font-size: 0.86rem; margin-bottom: 20px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); color: #aaa; }
+
+  .footnote { color: #666; font-size: 0.8rem; line-height: 1.6; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 18px; margin-top: 20px; }
+  .error-box { background: rgba(229,9,20,0.1); border: 1px solid #E50914; border-radius: 12px; padding: 16px; color: #ff8a8a; font-size: 0.9rem; margin-bottom: 24px; display:none; }
+  .error-box.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
+
+<div class="page">
+
+  <nav>
+    <div class="logo">SIGNATURE<span>VERIFY</span></div>
+    <div class="nav-tag">Đồ án tốt nghiệp · Khoa học dữ liệu</div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-title">XÁC THỰC<br><span class="accent">CHỮ KÝ</span> THÔNG MINH</div>
+    <p class="hero-sub">Hệ thống kết hợp đặc trưng thống kê thủ công (Hu Moments, GLCM) và học sâu
+      (Siamese Network) để phát hiện chữ ký giả mạo, ứng dụng trong phòng chống gian lận tài chính-ngân hàng.</p>
+    <div class="hero-badges">
+      <div class="badge">Dataset: <b>CEDAR</b></div>
+      <div class="badge">ROC-AUC: <b>~0.90</b></div>
+      <div class="badge">4 mô hình so sánh</div>
+    </div>
+  </section>
+
+  <div class="section-title">VÌ SAO CHỌN HỆ THỐNG NÀY</div>
+  <div class="feature-grid" id="featureGrid">
+    <div class="feature-card tilt-card"><div class="blob" style="background:radial-gradient(circle,#E50914,transparent 70%)"></div>
+      <div class="feature-icon">🧬</div><div class="feature-title">Kết hợp 2 hướng tiếp cận</div>
+      <div class="feature-desc">Đặc trưng thống kê thủ công kết hợp embedding học sâu từ Siamese Network.</div></div>
+    <div class="feature-card tilt-card"><div class="blob" style="background:radial-gradient(circle,#B026FF,transparent 70%)"></div>
+      <div class="feature-icon">📊</div><div class="feature-title">So sánh 4 mô hình</div>
+      <div class="feature-desc">RF, SVM, Siamese Network và Combined được đánh giá song song, minh bạch.</div></div>
+    <div class="feature-card tilt-card"><div class="blob" style="background:radial-gradient(circle,#FF3D6E,transparent 70%)"></div>
+      <div class="feature-icon">🎯</div><div class="feature-title">Hiệu chỉnh theo rủi ro</div>
+      <div class="feature-desc">Ngưỡng quyết định chọn bằng EER trên validation, phù hợp rủi ro ngân hàng.</div></div>
+    <div class="feature-card tilt-card"><div class="blob" style="background:radial-gradient(circle,#E50914,transparent 70%)"></div>
+      <div class="feature-icon">🔍</div><div class="feature-title">Phân tích minh bạch</div>
+      <div class="feature-desc">Grad-CAM trực quan hóa vùng ảnh mô hình tập trung khi ra quyết định.</div></div>
+  </div>
+
+  <div class="section-title">TẢI LÊN CHỮ KÝ</div>
+  <div class="upload-grid">
+    <div class="upload-zone tilt-card" id="zoneRef">
+      <input type="file" id="fileRef" accept="image/*">
+      <div class="upload-icon">📄</div>
+      <div class="upload-label">Chữ ký mẫu (reference)</div>
+      <div class="upload-hint">Kéo thả hoặc bấm để chọn ảnh</div>
+    </div>
+    <div class="upload-zone tilt-card" id="zoneQuery">
+      <input type="file" id="fileQuery" accept="image/*">
+      <div class="upload-icon">📝</div>
+      <div class="upload-label">Chữ ký cần kiểm tra (query)</div>
+      <div class="upload-hint">Kéo thả hoặc bấm để chọn ảnh</div>
+    </div>
+  </div>
+
+  <div class="error-box" id="errorBox"></div>
+
+  <label class="gradcam-toggle">
+    <input type="checkbox" id="gradcamToggle">
+    🔬 Hiển thị Grad-CAM (giải thích vùng ảnh mô hình tập trung khi ra quyết định)
+  </label>
+
+  <button class="btn-main" id="btnCompare" disabled>🔍  SO SÁNH CHỮ KÝ</button>
+
+  <div class="loading-wrap" id="loadingWrap">
+    <div class="spinner-3d"></div>
+    <div class="loading-text">Đang chạy 4 mô hình...</div>
+  </div>
+
+  <div class="results-wrap" id="resultsWrap">
+    <div class="section-title">ẢNH SAU TIỀN XỬ LÝ</div>
+    <div class="preview-grid">
+      <div class="preview-card"><img id="imgRefResult"><div class="cap">Reference</div></div>
+      <div class="preview-card"><img id="imgQueryResult"><div class="cap">Query</div></div>
+    </div>
+
+    <div id="verdictCard"></div>
+
+    <div class="section-title">CHI TIẾT TỪNG MÔ HÌNH</div>
+    <div class="model-grid" id="modelGrid"></div>
+
+    <div class="agree-note" id="agreeNote"></div>
+
+    <div id="gradcamSection"></div>
+
+    <p class="footnote">Điểm số Siamese là -khoảng cách embedding (chuẩn hóa hiển thị 0-1). Điểm RF/Combined
+      là xác suất phân loại. Điểm SVM là decision function (chuẩn hóa hiển thị). Ngưỡng quyết định chọn bằng
+      Equal Error Rate (EER) trên tập validation, cố định trước khi đánh giá test.</p>
+  </div>
+
+  <div class="about-section" id="aboutSection" style="display:none;">
+    <div class="section-title">VỀ HỆ THỐNG · SỐ LIỆU HIỆU NĂNG</div>
+    <div id="metricsTableWrap"></div>
+    <p class="about-desc">
+      <b>Phương pháp</b>: kết hợp đặc trưng thống kê thủ công (Hu Moments, GLCM, tỷ lệ nét, số điểm giao cắt)
+      và học sâu (Siamese Network, kiến trúc CNN + Contrastive/Triplet Loss). Đánh giá trên bộ dữ liệu CEDAR,
+      chia writer-independent (writer ở tập test không xuất hiện ở tập train), ngưỡng quyết định chọn bằng
+      Equal Error Rate trên tập validation.
+    </p>
+  </div>
+
+</div>
+
+<script>
+  // ---------- Load metrics "Ve he thong" ----------
+  fetch('/api/metrics').then(r => r.json()).then(data => {
+    if (!data.available || !data.rows.length) return;
+    const cols = ['model', 'accuracy', 'roc_auc', 'FAR', 'FRR', 'precision', 'recall', 'f1'].filter(c => c in data.rows[0]);
+    let html = '<table class="about-table"><thead><tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+    data.rows.forEach(row => {
+      html += '<tr>' + cols.map(c => {
+        const v = row[c];
+        return `<td>${typeof v === 'number' ? v.toFixed(4) : v}</td>`;
+      }).join('') + '</tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('metricsTableWrap').innerHTML = html;
+    document.getElementById('aboutSection').style.display = 'block';
+  }).catch(() => {});
+</script>
+<script>
+  // ---------- 3D tilt effect theo chuot ----------
+  function applyTilt(el, maxDeg) {
+    maxDeg = maxDeg || 8;
+    el.addEventListener('mousemove', (e) => {
+      const r = el.getBoundingClientRect();
+      const x = e.clientX - r.left, y = e.clientY - r.top;
+      const rx = ((y - r.height/2) / (r.height/2)) * -maxDeg;
+      const ry = ((x - r.width/2) / (r.width/2)) * maxDeg;
+      el.style.transform = `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg) scale3d(1.015,1.015,1.015)`;
+    });
+    el.addEventListener('mouseleave', () => {
+      el.style.transform = 'perspective(900px) rotateX(0) rotateY(0) scale3d(1,1,1)';
+    });
+  }
+  document.querySelectorAll('.tilt-card').forEach(el => applyTilt(el, 6));
+
+  // ---------- Upload logic ----------
+  let refFile = null, queryFile = null;
+
+  function setupUpload(zoneId, inputId, onSelect) {
+    const zone = document.getElementById(zoneId);
+    const input = document.getElementById(inputId);
+    zone.addEventListener('click', () => input.click());
+    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', (e) => {
+      e.preventDefault(); zone.classList.remove('dragover');
+      if (e.dataTransfer.files.length) { input.files = e.dataTransfer.files; onSelect(e.dataTransfer.files[0], zone); }
+    });
+    input.addEventListener('change', () => { if (input.files.length) onSelect(input.files[0], zone); });
+  }
+
+  function showPreview(file, zone) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      zone.innerHTML = `<img class="upload-preview" src="${e.target.result}">
+        <div class="upload-filename">${file.name}</div>`;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  setupUpload('zoneRef', 'fileRef', (file, zone) => { refFile = file; showPreview(file, zone); checkReady(); });
+  setupUpload('zoneQuery', 'fileQuery', (file, zone) => { queryFile = file; showPreview(file, zone); checkReady(); });
+
+  function checkReady() {
+    document.getElementById('btnCompare').disabled = !(refFile && queryFile);
+  }
+
+  // ---------- Goi API va hien ket qua ----------
+  function normalizeScore(score, modelKey) {
+    // Chuan hoa ve [0,1] chi de HIEN THI truc quan (khong doi logic quyet dinh
+    // - quyet dinh khop/khong khop van dung dung score/threshold that tu API)
+    if (modelKey === 'siamese') return Math.max(0, Math.min(1, 1 / (1 + Math.exp(-score/3))));
+    if (modelKey === 'svm') return Math.max(0, Math.min(1, 1 / (1 + Math.exp(-score))));
+    return Math.max(0, Math.min(1, score));
+  }
+
+  function renderGauge(value01, color) {
+    const r = 38, circ = 2 * Math.PI * r;
+    const offset = circ * (1 - value01);
+    return `<div class="gauge-wrap">
+      <svg width="88" height="88"><circle class="gauge-bg" cx="44" cy="44" r="${r}"></circle>
+      <circle class="gauge-fg" cx="44" cy="44" r="${r}" stroke="${color}"
+        stroke-dasharray="${circ}" stroke-dashoffset="${circ}" id="gauge-tmp"></circle></svg>
+      <div class="gauge-value" style="color:${color}">${Math.round(value01*100)}</div>
+    </div>`;
+  }
+
+  document.getElementById('btnCompare').addEventListener('click', async () => {
+    const errorBox = document.getElementById('errorBox');
+    errorBox.classList.remove('active');
+    document.getElementById('resultsWrap').classList.remove('active');
+    document.getElementById('loadingWrap').classList.add('active');
+    document.getElementById('btnCompare').disabled = true;
+
+    try {
+      const formData = new FormData();
+      formData.append('reference', refFile);
+      formData.append('query', queryFile);
+
+      const includeGradcam = document.getElementById('gradcamToggle').checked;
+      const resp = await fetch(`/api/verify?include_gradcam=${includeGradcam}`, { method: 'POST', body: formData });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({detail: 'Loi khong xac dinh'}));
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+      }
+      const data = await resp.json();
+      renderResults(data);
+    } catch (err) {
+      errorBox.textContent = '⚠ Lỗi: ' + err.message + ' (kiểm tra backend đã chạy và model_artifacts/ đã có đủ file chưa)';
+      errorBox.classList.add('active');
+    } finally {
+      document.getElementById('loadingWrap').classList.remove('active');
+      document.getElementById('btnCompare').disabled = false;
+    }
+  });
+
+  function renderResults(data) {
+    document.getElementById('imgRefResult').src = data.reference_image;
+    document.getElementById('imgQueryResult').src = data.query_image;
+
+    const mainMatch = data.main_match;
+    const mainName = data.results[data.main_model].name;
+    document.getElementById('verdictCard').innerHTML = `
+      <div class="verdict-card tilt-card ${mainMatch ? 'verdict-match' : 'verdict-nomatch'}">
+        <div class="verdict-icon">${mainMatch ? '✅' : '❌'}</div>
+        <div class="verdict-label">${mainMatch ? 'KHỚP' : 'KHÔNG KHỚP'}</div>
+        <div class="verdict-sub">${mainMatch ? 'Cùng người ký' : 'Nghi ngờ giả mạo'} · Kết luận theo ${mainName}</div>
+      </div>`;
+    applyTilt(document.querySelector('#verdictCard .tilt-card'), 4);
+
+    const order = ['combined', 'siamese', 'rf', 'svm'];
+    let gridHtml = '';
+    let matchCount = 0, total = 0;
+    order.forEach(key => {
+      if (!data.results[key]) return;
+      const r = data.results[key];
+      total++; if (r.match) matchCount++;
+      const val01 = normalizeScore(r.score, key);
+      const color = r.match ? '#2ecc71' : '#FF3B44';
+      gridHtml += `
+        <div class="model-card tilt-card ${r.featured ? 'featured' : ''}">
+          <div class="blob"></div>
+          <div class="model-name">${r.name}${r.featured ? ' ⭐' : ''}</div>
+          ${renderGauge(val01, color)}
+          <span class="model-badge ${r.match ? 'badge-match' : 'badge-nomatch'}">${r.match ? 'Khớp' : 'Không khớp'}</span>
+        </div>`;
+    });
+    document.getElementById('modelGrid').innerHTML = gridHtml;
+    document.querySelectorAll('#modelGrid .tilt-card').forEach(el => applyTilt(el, 6));
+
+    // Animate gauges sau khi da chen vao DOM
+    requestAnimationFrame(() => {
+      document.querySelectorAll('.gauge-fg').forEach((circle, i) => {
+        const r = 38, circ = 2 * Math.PI * r;
+        const key = order.filter(k => data.results[k])[i];
+        const val01 = normalizeScore(data.results[key].score, key);
+        setTimeout(() => { circle.style.strokeDashoffset = circ * (1 - val01); }, 50);
+      });
+    });
+
+    const note = document.getElementById('agreeNote');
+    if (matchCount === 0 || matchCount === total) {
+      note.textContent = '✓ Tất cả model đều đồng thuận kết quả — độ tin cậy cao.';
+    } else {
+      note.textContent = `⚠ Các model KHÔNG đồng thuận (${matchCount}/${total} model kết luận "Khớp"). Đây là trường hợp khó, nên xem xét thêm.`;
+    }
+
+    const gradcamSection = document.getElementById('gradcamSection');
+    if (data.gradcam_reference && data.gradcam_query) {
+      gradcamSection.innerHTML = `
+        <div class="section-title">GRAD-CAM · VÙNG ẢNH MÔ HÌNH TẬP TRUNG</div>
+        <div class="preview-grid">
+          <div class="preview-card"><img src="${data.gradcam_reference}"><div class="cap">Reference — vùng đỏ/vàng = ảnh hưởng lớn</div></div>
+          <div class="preview-card"><img src="${data.gradcam_query}"><div class="cap">Query — vùng đỏ/vàng = ảnh hưởng lớn</div></div>
+        </div>`;
+    } else {
+      gradcamSection.innerHTML = '';
+    }
+
+    document.getElementById('resultsWrap').classList.add('active');
+    document.getElementById('resultsWrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+</script>
+</body>
+</html>

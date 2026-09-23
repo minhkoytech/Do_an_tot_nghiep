@@ -1,0 +1,9 @@
+{
+  "model": "combined",
+  "threshold": 0.7388665841371429,
+  "selection": "max_accuracy_on_validation",
+  "accuracy_val": 0.7874666666666666,
+  "accuracy_test": 0.8088,
+  "FAR_test": 0.08622222222222223,
+  "FRR_test": 0.3486666666666667
+}

@@ -1,5 +1,5 @@
 {
-  "threshold": 0.6571399190700624,
+  "threshold": 0.37378696678959805,
   "rf_params": {
     "n_estimators": 400,
     "max_depth": 20
@@ -17,7 +17,5 @@
     "delta_num_crossings",
     "delta_baseline_ratio"
   ],
-  "embedding_dim": 64,
-  "threshold_method": "target_far_0.1",
-  "threshold_eer_backup": 0.37378696678959805
+  "embedding_dim": 64
 }

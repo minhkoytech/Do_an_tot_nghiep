@@ -1,38 +1,3 @@
-"""
-01_preprocessing.py
---------------------
-Tien xu ly anh chu ky viet tay (CEDAR-style dataset).
-
-Khop voi cau truc thu muc project DO_AN_TOT_NGHIEP:
-    data/raw/cedar/full_org/   (chu ky that)
-    data/raw/cedar/full_forg/  (chu ky gia)
-    data/processed/            (output cua script nay)
-
-Cac buoc:
-    1. Doc anh, chuyen ve grayscale (neu can).
-    2. Nhi phan hoa bang nguong Otsu (dao nguoc de net chu = 255, nen = 0).
-    3. Khu nhieu bang morphological opening + loai bo cac connected
-       component qua nho (dom nhieu, hat bui khi scan).
-    4. Crop theo bounding box cua net chu (bo vien trang thua).
-    5. Resize ve kich thuoc chuan va dat vao chinh giua canvas co dinh
-       (giu ty le, khong lam meo net chu).
-
-Ket qua: anh grayscale, nen den (0), net chu trang (255), kich thuoc
-CANVAS_SIZE, da can giua -> san sang de trich xuat dac trung hoac dua
-vao CNN.
-
-Cach dung nhanh:
-    python preprocess.py --input_dir /path/to/CEDAR --output_dir /path/to/processed
-
-Cau truc input_dir mac dinh (chuan CEDAR public):
-    CEDAR/
-        full_org/   original_{writer}_{sample}.png   (chu ky that)
-        full_forg/  forgeries_{writer}_{sample}.png  (chu ky gia)
-
-Neu bo du lieu cua ban dat ten khac, chi can sua ham `parse_filename`
-va bien GENUINE_DIR / FORGED_DIR ben duoi.
-"""
-
 import os
 import re
 import argparse
@@ -41,29 +6,12 @@ import numpy as np
 from pathlib import Path
 from tqdm import tqdm
 
-# ---------------------------------------------------------------------------
-# Cau hinh mac dinh (sua lai neu cau truc thu muc cua ban khac)
-# ---------------------------------------------------------------------------
 GENUINE_DIR_NAME = "full_org"
 FORGED_DIR_NAME = "full_forg"
 
-# Kich thuoc canvas chuan sau tien xu ly (rong x cao).
-# 220x155 la kich thuoc pho bien duoc dung trong nhieu paper ve CEDAR.
-CANVAS_SIZE = (220, 155)  # (width, height)
-
-# Nguong dien tich toi thieu (pixel) de giu lai mot connected component.
-# Cac vet nhieu nho hon se bi loai bo. Can chinh lai theo do phan giai anh.
 MIN_COMPONENT_AREA = 15
 
-
 def parse_filename(filename: str):
-    """
-    Tach writer_id va sample_id tu ten file.
-    Vi du: 'original_12_7.png' -> writer_id=12, sample_id=7
-           'forgeries_12_7.png' -> writer_id=12, sample_id=7
-
-    Neu ten file cua ban khac dinh dang nay, CHI CAN SUA HAM NAY.
-    """
     match = re.search(r"(\d+)_(\d+)", filename)
     if not match:
         raise ValueError(f"Khong doc duoc writer/sample id tu ten file: {filename}")
@@ -72,11 +20,6 @@ def parse_filename(filename: str):
 
 
 def binarize(img_gray: np.ndarray) -> np.ndarray:
-    """
-    Nhi phan hoa bang nguong Otsu. Tra ve anh nhi phan voi
-    net chu = 255 (trang), nen = 0 (den).
-    """
-    # Otsu tu dong tim nguong toi uu, khong can chon thu cong.
     _, binary = cv2.threshold(
         img_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
     )
@@ -84,26 +27,10 @@ def binarize(img_gray: np.ndarray) -> np.ndarray:
 
 
 def remove_noise(binary_img: np.ndarray, min_area: int = MIN_COMPONENT_AREA) -> np.ndarray:
-    """
-    Khu nhieu:
-      - Morphological opening de loai bo cac diem nhieu li ti.
-      - Loai bo cac connected component co dien tich nho hon min_area
-        (thuong la hat bui / vet ban khi scan, khong phai net chu).
-
-    AN TOAN VOI NET MONG: neu phep opening xoa sach TOAN BO noi dung
-    anh (truong hop net chu qua mong, vd 1 pixel - phat hien qua kiem
-    thu voi du lieu tong hop), bo qua buoc opening va chi loc theo dien
-    tich connected component tren anh nhi phan GOC. Tranh lam mat toan
-    bo chu ky chi vi net qua mong so voi kernel opening.
-    """
+    
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
     opened = cv2.morphologyEx(binary_img, cv2.MORPH_OPEN, kernel)
 
-    # An toan voi net mong: neu phep opening xoa mat PHAN LON noi dung
-    # (con lai duoi 20% so pixel ban dau - truong hop net chu qua mong so
-    # voi kernel opening, cac pixel con sot lai thuong la manh vun roi
-    # rac se bi loc het boi min_area ben duoi), bo qua buoc opening va
-    # chi loc theo dien tich connected component tren anh nhi phan GOC.
     original_count = np.count_nonzero(binary_img)
     if original_count > 0 and np.count_nonzero(opened) < 0.2 * original_count:
         opened = binary_img

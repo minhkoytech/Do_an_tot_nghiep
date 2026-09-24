@@ -412,17 +412,59 @@ def main():
         }
         .hero-badge b { color: #E50914; }
 
+        /* Thanh tab - kieu Netflix: chu hoa, gach do duoi tab dang chon */
+        [data-testid="stTabs"] [data-baseweb="tab-list"] {
+            gap: 6px;
+            background: transparent;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            margin-bottom: 26px;
+        }
+        [data-testid="stTabs"] [data-baseweb="tab"] {
+            background: transparent;
+            border-radius: 8px 8px 0 0;
+            padding: 10px 6px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            letter-spacing: 0.6px;
+            color: #8a8a8a;
+        }
+        [data-testid="stTabs"] [data-baseweb="tab"]:hover { color: #FFFFFF; }
+        [data-testid="stTabs"] [aria-selected="true"] { color: #FFFFFF !important; }
+        [data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+            background: linear-gradient(90deg, #E50914, #FF3D6E) !important;
+            height: 3px;
+        }
+        [data-testid="stTabs"] [data-baseweb="tab-border"] { background: transparent; }
+
+        /* Tieu de tung o upload - danh so 1/2 cho ro */
+        .upload-slot-title {
+            font-weight: 800;
+            font-size: 0.88rem;
+            letter-spacing: 0.6px;
+            color: #FFFFFF;
+            margin-bottom: 8px;
+            padding-left: 10px;
+            border-left: 3px solid #E50914;
+        }
+        .upload-slot-title span {
+            font-weight: 500;
+            color: #7a7a7a;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
         /* File uploader - khung bo tron, vien do khi hover */
         [data-testid="stFileUploader"] {
-            background-color: #121212;
-            border: 1.5px dashed #2A2A2A;
-            border-radius: 14px;
-            padding: 8px;
-            transition: border-color 0.25s ease, background-color 0.25s ease;
+            background: linear-gradient(160deg, #161014, #101013);
+            border: 2px dashed #3a2a2e;
+            border-radius: 16px;
+            padding: 10px;
+            transition: border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
         }
         [data-testid="stFileUploader"]:hover {
             border-color: #E50914;
-            background-color: #161010;
+            background: linear-gradient(160deg, #1d1014, #141013);
+            box-shadow: 0 0 0 4px rgba(229,9,20,0.08), 0 8px 24px rgba(0,0,0,0.35);
         }
         [data-testid="stFileUploaderDropzone"] { background-color: transparent; }
 
@@ -674,51 +716,8 @@ def main():
     )
 
     st.markdown(
-        '<div class="hero-wrap">'
+        '<div class="hero-wrap" style="padding-bottom:24px;">'
         '<p class="hero-title">XÁC THỰC<br><span class="hero-accent">CHỮ KÝ</span> THÔNG MINH</p>'
-        '<p class="hero-subtitle">Hệ thống kết hợp đặc trưng thống kê thủ công (Hu Moments, GLCM) và '
-        'học sâu (Siamese Network) để phát hiện chữ ký giả mạo, ứng dụng trong phòng chống gian lận '
-        'tài chính-ngân hàng.</p>'
-        '<div class="hero-badges">'
-        '<div class="hero-badge">Dataset: <b>CEDAR</b></div>'
-        '<div class="hero-badge">ROC-AUC: <b>~0.90</b></div>'
-        '<div class="hero-badge">4 mô hình so sánh</div>'
-        '</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<p class="section-header">VÌ SAO CHỌN HỆ THỐNG NÀY</p>'
-        '<div class="feature-grid">'
-        '<div class="feature-card">'
-        '<div class="blob blob-red" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
-        '<div class="feature-card-icon">🧬</div>'
-        '<div class="feature-card-title">Kết hợp 2 hướng tiếp cận</div>'
-        '<div class="feature-card-desc">Đặc trưng thống kê thủ công (Hu Moments, GLCM) kết hợp '
-        'embedding học sâu từ Siamese Network.</div>'
-        '</div>'
-        '<div class="feature-card">'
-        '<div class="blob blob-purple" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
-        '<div class="feature-card-icon">📊</div>'
-        '<div class="feature-card-title">So sánh 4 mô hình</div>'
-        '<div class="feature-card-desc">RF, SVM, Siamese Network và Combined được đánh giá song song, '
-        'minh bạch từng kết quả.</div>'
-        '</div>'
-        '<div class="feature-card">'
-        '<div class="blob blob-pink" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
-        '<div class="feature-card-icon">🎯</div>'
-        '<div class="feature-card-title">Hiệu chỉnh theo rủi ro</div>'
-        '<div class="feature-card-desc">Ngưỡng quyết định chọn bằng EER trên tập validation, phù hợp '
-        'với mức rủi ro ngân hàng chấp nhận.</div>'
-        '</div>'
-        '<div class="feature-card">'
-        '<div class="blob blob-red" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
-        '<div class="feature-card-icon">🔍</div>'
-        '<div class="feature-card-title">Phân tích minh bạch</div>'
-        '<div class="feature-card-desc">Grad-CAM trực quan hóa vùng ảnh mô hình tập trung khi ra '
-        'quyết định.</div>'
-        '</div>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -764,121 +763,186 @@ def main():
         msg += f" · ngưỡng tối ưu accuracy (test: {decision_cfg.get('accuracy_test', 0):.1%})"
     st.success(msg)
 
-    st.markdown('<p class="section-header">TẢI LÊN CHỮ KÝ</p>', unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        ref_files = st.file_uploader(
-            "Chữ ký mẫu (reference) — nên tải 3-5 mẫu để chính xác hơn",
-            type=["png", "jpg", "jpeg", "bmp"], accept_multiple_files=True,
+    tab_verify, tab_about = st.tabs(["  ✍️  XÁC THỰC CHỮ KÝ  ", "  📚  GIỚI THIỆU & SỐ LIỆU  "])
+
+    with tab_verify:
+        st.markdown('<p class="section-header">TẢI LÊN CHỮ KÝ</p>', unsafe_allow_html=True)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown('<div class="upload-slot-title">1 · CHỮ KÝ MẪU <span>reference</span></div>',
+                        unsafe_allow_html=True)
+            ref_files = st.file_uploader(
+                "Nên tải 3-5 mẫu để kết quả chính xác hơn",
+                type=["png", "jpg", "jpeg", "bmp"], accept_multiple_files=True,
+            )
+            # Hien ngay anh GOC vua chon de nguoi dung kiem tra da chon dung file
+            if ref_files:
+                st.image(ref_files[0], caption=f"Ảnh gốc · {ref_files[0].name}", use_container_width=True)
+                if len(ref_files) > 1:
+                    st.caption(f"và {len(ref_files) - 1} mẫu khác")
+        with col2:
+            st.markdown('<div class="upload-slot-title">2 · CHỮ KÝ CẦN KIỂM TRA <span>query</span></div>',
+                        unsafe_allow_html=True)
+            query_file = st.file_uploader("Ảnh chữ ký cần xác thực", type=["png", "jpg", "jpeg", "bmp"])
+            if query_file:
+                st.image(query_file, caption=f"Ảnh gốc · {query_file.name}", use_container_width=True)
+
+        show_gradcam = st.checkbox(
+            "🔬 Hiển thị Grad-CAM (giải thích vùng ảnh mô hình tập trung khi ra quyết định)",
+            value=False,
+            disabled=(gradcam_mod is None),
+            help="Cần có file 09_error_analysis_gradcam.py trong src/" if gradcam_mod is None else None,
         )
-    with col2:
-        query_file = st.file_uploader("Chữ ký cần kiểm tra (query)", type=["png", "jpg", "jpeg", "bmp"])
 
-    show_gradcam = st.checkbox(
-        "🔬 Hiển thị Grad-CAM (giải thích vùng ảnh mô hình tập trung khi ra quyết định)",
-        value=False,
-        disabled=(gradcam_mod is None),
-        help="Cần có file 09_error_analysis_gradcam.py trong src/" if gradcam_mod is None else None,
-    )
+        if ref_files and query_file:
+            if st.button("🔍  SO SÁNH CHỮ KÝ", type="primary", use_container_width=True):
+                with tempfile.TemporaryDirectory() as tmp:
+                    tmp_dir = Path(tmp)
+                    with st.spinner("Đang tiền xử lý ảnh..."):
+                        ref_processed_list = [
+                            preprocess_uploaded_image(f, tmp_dir) for f in ref_files
+                        ]
+                        ref_processed = ref_processed_list[0]
+                        query_processed = preprocess_uploaded_image(query_file, tmp_dir)
 
-    if ref_files and query_file:
-        if st.button("🔍  SO SÁNH CHỮ KÝ", type="primary", use_container_width=True):
-            with tempfile.TemporaryDirectory() as tmp:
-                tmp_dir = Path(tmp)
-                with st.spinner("Đang tiền xử lý ảnh..."):
-                    ref_processed_list = [
-                        preprocess_uploaded_image(f, tmp_dir) for f in ref_files
-                    ]
-                    ref_processed = ref_processed_list[0]
-                    query_processed = preprocess_uploaded_image(query_file, tmp_dir)
+                    st.markdown('<p class="section-header">ẢNH SAU TIỀN XỬ LÝ</p>',
+                                unsafe_allow_html=True)
+                    ref_cap = "Chữ ký mẫu" if len(ref_processed_list) == 1 else f"Chữ ký mẫu (1/{len(ref_processed_list)})"
+                    pcol1, pcol2 = st.columns(2)
+                    with pcol1:
+                        st.image(ref_processed, caption=ref_cap, use_container_width=True)
+                    with pcol2:
+                        st.image(query_processed, caption="Cần kiểm tra", use_container_width=True)
 
-                st.markdown('<p class="section-header">ẢNH SAU TIỀN XỬ LÝ</p>', unsafe_allow_html=True)
-                pcol1, pcol2 = st.columns(2)
-                with pcol1:
-                    cap = "Reference" if len(ref_processed_list) == 1 else f"Reference (1/{len(ref_processed_list)} mẫu)"
-                    st.image(ref_processed, caption=cap, use_container_width=True)
-                with pcol2:
-                    st.image(query_processed, caption="Query", use_container_width=True)
+                    with st.spinner("Đang chạy mô hình..."):
+                        # CHI CHAY MOT MODEL DUY NHAT (xem DECISION_MODEL o dau file).
+                        # MULTI-REFERENCE ENROLLMENT: neu nguoi dung tai len nhieu
+                        # chu ky mau, tinh diem cua query voi TUNG mau roi lay TRUNG
+                        # BINH. Day la cach he thong sinh trac hoc thuc te lam
+                        # (dang ky nhieu mau khi mo tai khoan) - giam nhieu do mot
+                        # lan ky bat thuong, cho quyet dinh on dinh hon 1 mau don.
+                        active_model = active_model_name
 
-                with st.spinner("Đang chạy mô hình..."):
-                    # CHI CHAY MOT MODEL DUY NHAT (xem DECISION_MODEL o dau file).
-                    # MULTI-REFERENCE ENROLLMENT: neu nguoi dung tai len nhieu
-                    # chu ky mau, tinh diem cua query voi TUNG mau roi lay TRUNG
-                    # BINH. Day la cach he thong sinh trac hoc thuc te lam
-                    # (dang ky nhieu mau khi mo tai khoan) - giam nhieu do mot
-                    # lan ky bat thuong, cho quyet dinh on dinh hon 1 mau don.
-                    active_model = active_model_name
+                        def score_one(ref_path):
+                            if active_model == "combined":
+                                return compute_combined_verdict(models_dict, ref_path, query_processed)
+                            if active_model == "siamese":
+                                return compute_siamese_verdict(models_dict, ref_path, query_processed)
+                            return compute_classical_verdict(models_dict, ref_path, query_processed, active_model)
 
-                    def score_one(ref_path):
-                        if active_model == "combined":
-                            return compute_combined_verdict(models_dict, ref_path, query_processed)
-                        if active_model == "siamese":
-                            return compute_siamese_verdict(models_dict, ref_path, query_processed)
-                        return compute_classical_verdict(models_dict, ref_path, query_processed, active_model)
+                        per_ref = [score_one(rp) for rp in ref_processed_list]
+                        score = float(np.mean([r[0] for r in per_ref]))
+                        threshold = per_ref[0][1]
+                        main_match = score >= threshold
+                        main_model_label = MODEL_DISPLAY_NAMES.get(active_model, active_model)
+                        if len(per_ref) > 1:
+                            main_model_label += f" · trung bình {len(per_ref)} mẫu"
 
-                    per_ref = [score_one(rp) for rp in ref_processed_list]
-                    score = float(np.mean([r[0] for r in per_ref]))
-                    threshold = per_ref[0][1]
-                    main_match = score >= threshold
-                    main_model_label = MODEL_DISPLAY_NAMES.get(active_model, active_model)
-                    if len(per_ref) > 1:
-                        main_model_label += f" · trung bình {len(per_ref)} mẫu"
+                    # ----- Ket luan -----
+                    verdict_class = "verdict-match" if main_match else "verdict-nomatch"
+                    verdict_text = "KHỚP" if main_match else "KHÔNG KHỚP"
+                    verdict_sub = "Cùng người ký" if main_match else "Nghi ngờ giả mạo"
+                    st.markdown(
+                        f'<div class="verdict-card {verdict_class}">'
+                        f'<p class="verdict-label">{verdict_text}</p>'
+                        f'<p class="verdict-sub">{verdict_sub} · {main_model_label}</p>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
 
-                # ----- Ket luan -----
-                verdict_class = "verdict-match" if main_match else "verdict-nomatch"
-                verdict_text = "KHỚP" if main_match else "KHÔNG KHỚP"
-                verdict_sub = "Cùng người ký" if main_match else "Nghi ngờ giả mạo"
-                st.markdown(
-                    f'<div class="verdict-card {verdict_class}">'
-                    f'<p class="verdict-label">{verdict_text}</p>'
-                    f'<p class="verdict-sub">{verdict_sub} · {main_model_label}</p>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+                    # ----- Gauge diem so cua model ra quyet dinh -----
+                    gauge_color = "#2ecc71" if main_match else "#FF3B44"
+                    val01 = normalize_score_for_display(score, active_model)
+                    badge_class = "badge-match" if main_match else "badge-nomatch"
+                    badge_text = "Khớp" if main_match else "Không khớp"
+                    st.markdown(
+                        '<div class="model-grid" style="grid-template-columns:1fr; max-width:260px; margin:0 auto 28px;">'
+                        '<div class="model-card featured">'
+                        f'<div class="model-name">Độ tương đồng</div>'
+                        f'{render_gauge_svg(val01, gauge_color)}'
+                        f'<span class="model-badge {badge_class}">{badge_text}</span>'
+                        '</div></div>',
+                        unsafe_allow_html=True,
+                    )
 
-                # ----- Gauge diem so cua model ra quyet dinh -----
-                gauge_color = "#2ecc71" if main_match else "#FF3B44"
-                val01 = normalize_score_for_display(score, active_model)
-                badge_class = "badge-match" if main_match else "badge-nomatch"
-                badge_text = "Khớp" if main_match else "Không khớp"
-                st.markdown(
-                    '<div class="model-grid" style="grid-template-columns:1fr; max-width:260px; margin:0 auto 28px;">'
-                    '<div class="model-card featured">'
-                    f'<div class="model-name">Độ tương đồng</div>'
-                    f'{render_gauge_svg(val01, gauge_color)}'
-                    f'<span class="model-badge {badge_class}">{badge_text}</span>'
-                    '</div></div>',
-                    unsafe_allow_html=True,
-                )
+                    # ----- Grad-CAM (neu duoc bat) -----
+                    if show_gradcam and gradcam_mod is not None:
+                        st.markdown('<p class="section-header">GRAD-CAM · VÙNG ẢNH MÔ HÌNH TẬP TRUNG</p>', unsafe_allow_html=True)
+                        with st.spinner("Đang tính Grad-CAM..."):
+                            overlay_ref, overlay_query = compute_gradcam_for_pair(models_dict, ref_processed, query_processed)
+                        if overlay_ref is not None:
+                            gcol1, gcol2 = st.columns(2)
+                            with gcol1:
+                                st.image(overlay_ref, caption="Reference — vùng đỏ/vàng = ảnh hưởng lớn đến quyết định", use_container_width=True)
+                            with gcol2:
+                                st.image(overlay_query, caption="Query — vùng đỏ/vàng = ảnh hưởng lớn đến quyết định", use_container_width=True)
+                        else:
+                            st.warning("Không tính được Grad-CAM (thiếu module 09_error_analysis_gradcam.py).")
 
-                # ----- Grad-CAM (neu duoc bat) -----
-                if show_gradcam and gradcam_mod is not None:
-                    st.markdown('<p class="section-header">GRAD-CAM · VÙNG ẢNH MÔ HÌNH TẬP TRUNG</p>', unsafe_allow_html=True)
-                    with st.spinner("Đang tính Grad-CAM..."):
-                        overlay_ref, overlay_query = compute_gradcam_for_pair(models_dict, ref_processed, query_processed)
-                    if overlay_ref is not None:
-                        gcol1, gcol2 = st.columns(2)
-                        with gcol1:
-                            st.image(overlay_ref, caption="Reference — vùng đỏ/vàng = ảnh hưởng lớn đến quyết định", use_container_width=True)
-                        with gcol2:
-                            st.image(overlay_query, caption="Query — vùng đỏ/vàng = ảnh hưởng lớn đến quyết định", use_container_width=True)
-                    else:
-                        st.warning("Không tính được Grad-CAM (thiếu module 09_error_analysis_gradcam.py).")
+                    st.markdown(
+                        '<p class="footnote">Gauge hiển thị độ tương đồng đã chuẩn hóa về thang 0-100 CHỈ ĐỂ '
+                        'TRỰC QUAN; quyết định Khớp/Không khớp dùng đúng điểm số và ngưỡng gốc của mô hình. '
+                        'Ngưỡng quyết định được chọn trên tập validation và cố định trước khi đánh giá test.</p>',
+                        unsafe_allow_html=True,
+                    )
+        else:
+            st.info("Tải lên cả 2 ảnh chữ ký để bắt đầu so sánh.")
 
-                st.markdown(
-                    '<p class="footnote">Gauge hiển thị độ tương đồng đã chuẩn hóa về thang 0-100 CHỈ ĐỂ '
-                    'TRỰC QUAN; quyết định Khớp/Không khớp dùng đúng điểm số và ngưỡng gốc của mô hình. '
-                    'Ngưỡng quyết định được chọn trên tập validation và cố định trước khi đánh giá test.</p>',
-                    unsafe_allow_html=True,
-                )
-    else:
-        st.info("Tải lên cả 2 ảnh chữ ký để bắt đầu so sánh.")
 
-    # ----- Section "Ve he thong" - hien thi so lieu hieu nang that -----
-    with st.expander("📊 VỀ HỆ THỐNG · Số liệu hiệu năng đã đánh giá"):
+    # ----- TAB 2: gioi thieu + so lieu hieu nang -----
+    with tab_about:
+        st.markdown(
+            '<p class="hero-subtitle" style="margin-top:0;">Hệ thống kết hợp đặc trưng thống kê thủ công '
+            '(Hu Moments, GLCM) và học sâu (Siamese Network) để phát hiện chữ ký giả mạo, ứng dụng trong '
+            'phòng chống gian lận tài chính-ngân hàng.</p>'
+            '<div class="hero-badges" style="margin-bottom:36px;">'
+            '<div class="hero-badge">Dataset: <b>CEDAR</b></div>'
+            '<div class="hero-badge">ROC-AUC: <b>~0.90</b></div>'
+            '<div class="hero-badge">4 mô hình so sánh</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown(
+            '<p class="section-header">VÌ SAO CHỌN HỆ THỐNG NÀY</p>'
+            '<div class="feature-grid">'
+            '<div class="feature-card">'
+            '<div class="blob blob-red" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
+            '<div class="feature-card-icon">🧬</div>'
+            '<div class="feature-card-title">Kết hợp 2 hướng tiếp cận</div>'
+            '<div class="feature-card-desc">Đặc trưng thống kê thủ công (Hu Moments, GLCM) kết hợp '
+            'embedding học sâu từ Siamese Network.</div>'
+            '</div>'
+            '<div class="feature-card">'
+            '<div class="blob blob-purple" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
+            '<div class="feature-card-icon">📊</div>'
+            '<div class="feature-card-title">So sánh 4 mô hình</div>'
+            '<div class="feature-card-desc">RF, SVM, Siamese Network và Combined được đánh giá song song, '
+            'minh bạch từng kết quả.</div>'
+            '</div>'
+            '<div class="feature-card">'
+            '<div class="blob blob-pink" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
+            '<div class="feature-card-icon">🎯</div>'
+            '<div class="feature-card-title">Hiệu chỉnh theo rủi ro</div>'
+            '<div class="feature-card-desc">Ngưỡng quyết định chọn bằng EER trên tập validation, phù hợp '
+            'với mức rủi ro ngân hàng chấp nhận.</div>'
+            '</div>'
+            '<div class="feature-card">'
+            '<div class="blob blob-red" style="width:90px;height:90px;bottom:-20px;right:-20px;"></div>'
+            '<div class="feature-card-icon">🔍</div>'
+            '<div class="feature-card-title">Phân tích minh bạch</div>'
+            '<div class="feature-card-desc">Grad-CAM trực quan hóa vùng ảnh mô hình tập trung khi ra '
+            'quyết định.</div>'
+            '</div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+        st.markdown('<p class="section-header">SỐ LIỆU HIỆU NĂNG ĐÃ ĐÁNH GIÁ</p>', unsafe_allow_html=True)
         metrics_df = load_performance_metrics()
         if metrics_df is not None:
-            display_cols = [c for c in ["model", "accuracy", "roc_auc", "FAR", "FRR", "precision", "recall", "f1"] if c in metrics_df.columns]
+            display_cols = [c for c in ["model", "accuracy", "roc_auc", "FAR", "FRR", "precision", "recall", "f1"]
+                            if c in metrics_df.columns]
             st.dataframe(metrics_df[display_cols].round(4), use_container_width=True, hide_index=True)
             st.caption(
                 "Kết quả đánh giá trên tập test (writer-independent, không rò rỉ dữ liệu). "
@@ -889,11 +953,14 @@ def main():
                 "Chưa tìm thấy file kết quả (results/tables/final_model_comparison*.csv). "
                 "Chạy 05_pairwise_baseline.py, 06_siamese_network.py, 08_combined_model.py để tạo số liệu."
             )
+
+        st.markdown('<p class="section-header">PHƯƠNG PHÁP</p>', unsafe_allow_html=True)
         st.markdown(
-            "**Phương pháp**: kết hợp đặc trưng thống kê thủ công (Hu Moments, GLCM, tỷ lệ nét, "
-            "số điểm giao cắt) và học sâu (Siamese Network, kiến trúc CNN + Contrastive/Triplet Loss). "
-            "Đánh giá trên bộ dữ liệu CEDAR, chia writer-independent (writer ở tập test không xuất hiện "
-            "ở tập train), ngưỡng quyết định chọn bằng Equal Error Rate trên tập validation."
+            "Kết hợp đặc trưng thống kê thủ công (Hu Moments, GLCM, tỷ lệ nét trên/dưới baseline, "
+            "số điểm giao cắt nét bút) và học sâu (Siamese Network, kiến trúc CNN + Contrastive/Triplet Loss). "
+            "Đánh giá trên bộ dữ liệu CEDAR, chia **writer-independent** — người ký ở tập test không xuất hiện "
+            "ở tập train, nên kết quả phản ánh đúng khả năng xác thực chữ ký của người chưa từng thấy. "
+            "Ngưỡng quyết định được chọn trên tập validation và cố định trước khi đánh giá test."
         )
 
 

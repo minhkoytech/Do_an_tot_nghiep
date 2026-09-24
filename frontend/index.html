@@ -3,472 +3,387 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SignatureVerify — Xác thực chữ ký AI</title>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<title>Xác thực chữ ký viết tay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    font-family: 'Inter', sans-serif;
-    background: #060608;
-    color: #fff;
-    min-height: 100vh;
-    overflow-x: hidden;
-    position: relative;
+  :root{
+    --bg:#E3E4DB;        /* nen xam-xanh am */
+    --ink:#121210;        /* muc den */
+    --muted:#5C5C54;      /* chu phu */
+    --line:#C7C8BD;       /* duong ke */
+    --accent:#4A5D46;     /* xanh reu - mau nhan */
+    --ok:#3E5C3A;         /* khop */
+    --no:#8A2E23;         /* khong khop */
+    --card:#FAFAF7;       /* the sang */
+    --dark:#14140F;       /* the toi */
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'Be Vietnam Pro',system-ui,sans-serif;
+    font-size:16px; line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:0 28px 100px}
+
+  header{
+    border-bottom:1px solid var(--line); padding:22px 0 18px; margin-bottom:56px;
+    display:flex; align-items:baseline; justify-content:space-between; gap:20px; flex-wrap:wrap;
+  }
+  .brand{font-family:'Anton',Impact,sans-serif; text-transform:uppercase; letter-spacing:.04em; font-size:1.15rem}
+  .brand span{color:var(--accent)}
+  .brand-sub{color:var(--muted); font-size:.78rem; letter-spacing:.08em; text-transform:uppercase}
+
+  .eyebrow{
+    font-size:.72rem; font-weight:700; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:14px;
+  }
+  h1{
+    font-family:'Anton',Impact,sans-serif; font-weight:400; text-transform:uppercase;
+    font-size:clamp(2.6rem,7vw,4.6rem); line-height:.96; letter-spacing:.01em;
+    margin-bottom:18px;
+  }
+  h1 em{font-style:normal; color:var(--accent)}
+  h2{
+    font-family:'Anton',Impact,sans-serif; font-weight:400; text-transform:uppercase;
+    font-size:clamp(1.7rem,3.6vw,2.5rem); line-height:1.02; letter-spacing:.01em; margin-bottom:12px;
+  }
+  .lede{color:var(--muted); font-size:1.02rem; max-width:62ch}
+
+  section{padding:44px 0; border-top:1px solid var(--line)}
+  section:first-of-type{border-top:none; padding-top:0}
+
+  nav.tabs{display:flex; gap:26px; border-bottom:1px solid var(--line); margin-bottom:44px}
+  .tab-btn{
+    background:none; border:none; cursor:pointer; padding:0 0 14px;
+    font-family:inherit; font-size:.78rem; font-weight:700; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--muted); position:relative;
+  }
+  .tab-btn:hover{color:var(--ink)}
+  .tab-btn.active{color:var(--ink)}
+  .tab-btn.active::after{
+    content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; background:var(--accent);
+  }
+  .panel{display:none}
+  .panel.active{display:block; animation:fade .3s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  .status{
+    display:flex; align-items:center; gap:10px; font-size:.86rem; color:var(--muted);
+    border-left:2px solid var(--accent); padding:6px 0 6px 14px; margin-bottom:40px;
   }
 
-  /* ---------- Khoi gradient troi noi (background 3D depth) ---------- */
-  .orb { position: fixed; border-radius: 50%; filter: blur(90px); opacity: 0.35; z-index: 0; pointer-events: none; }
-  .orb1 { width: 520px; height: 520px; background: radial-gradient(circle, #E50914, transparent 70%); top: -150px; left: -120px; animation: float1 22s ease-in-out infinite; }
-  .orb2 { width: 460px; height: 460px; background: radial-gradient(circle, #B026FF, transparent 70%); bottom: -120px; right: -100px; animation: float2 26s ease-in-out infinite; }
-  .orb3 { width: 380px; height: 380px; background: radial-gradient(circle, #FF3D6E, transparent 70%); top: 45%; left: 55%; animation: float3 19s ease-in-out infinite; }
-  @keyframes float1 { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(60px,50px) scale(1.15);} }
-  @keyframes float2 { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(-50px,-40px) scale(0.9);} }
-  @keyframes float3 { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(-70px,30px) scale(1.1);} }
-
-  .page { position: relative; z-index: 1; max-width: 1080px; margin: 0 auto; padding: 0 24px 80px; }
-
-  /* ---------- Navbar kinh mo (glassmorphism) ---------- */
-  nav {
-    position: sticky; top: 0; z-index: 50;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 18px 24px; margin: 0 -24px 50px;
-    background: rgba(6,6,8,0.6);
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:24px}
+  @media(max-width:660px){.grid2{grid-template-columns:1fr}}
+  .slot-label{
+    display:flex; align-items:baseline; gap:8px; margin-bottom:10px;
+    font-size:.74rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
   }
-  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; letter-spacing: 1.5px; }
-  .logo span { background: linear-gradient(90deg,#E50914,#FF3D6E,#B026FF); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
-  .nav-tag { font-size: 0.72rem; color: #777; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
-
-  /* ---------- Hero ---------- */
-  .hero { padding: 30px 0 60px; text-align: left; }
-  .hero-title { font-family: 'Bebas Neue', sans-serif; font-size: clamp(2.6rem, 6vw, 4.6rem); line-height: 1.02; letter-spacing: 2px; }
-  .hero-title .accent { background: linear-gradient(90deg,#E50914,#FF3D6E,#B026FF); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
-  .hero-sub { color: #999; font-size: 1.02rem; max-width: 600px; margin-top: 18px; line-height: 1.65; }
-  .hero-badges { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
-  .badge { background: rgba(255,255,255,0.04); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 7px 16px; font-size: 0.78rem; color: #aaa; }
-  .badge b { color: #FF3D6E; }
-
-  /* ---------- Section header ---------- */
-  .section-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.55rem; letter-spacing: 1.5px; margin: 8px 0 20px; display:flex; align-items:center; gap:10px; }
-  .section-title::before { content:""; width:4px; height:22px; background:linear-gradient(180deg,#E50914,#B026FF); border-radius:2px; }
-
-  /* ---------- Feature grid (kinh mo + blob) ---------- */
-  .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px,1fr)); gap: 16px; margin-bottom: 56px; }
-  .feature-card {
-    position: relative; overflow: hidden; border-radius: 18px; padding: 26px 22px; min-height: 160px;
-    background: rgba(255,255,255,0.035); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
-    border: 1px solid rgba(255,255,255,0.08);
-    transition: transform 0.3s ease, border-color 0.3s ease;
-    transform-style: preserve-3d; will-change: transform;
+  .slot-label i{font-style:normal; color:var(--accent)}
+  .slot-label small{font-weight:500; letter-spacing:0; text-transform:none; color:var(--muted)}
+  .drop{
+    background:var(--card); border:1px solid var(--line); border-radius:4px;
+    padding:30px 20px; text-align:center; cursor:pointer; min-height:190px;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;
+    transition:border-color .18s ease, background .18s ease;
   }
-  .feature-card:hover { border-color: rgba(229,9,20,0.5); }
-  .feature-card .blob { position:absolute; width:110px; height:110px; border-radius:50%; filter: blur(24px); opacity:0.4; bottom:-30px; right:-30px; z-index:0; }
-  .feature-card > * { position: relative; z-index: 1; }
-  .feature-icon { font-size: 1.7rem; margin-bottom: 10px; }
-  .feature-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 8px; }
-  .feature-desc { font-size: 0.85rem; color: #9a94b0; line-height: 1.55; }
+  .drop:hover,.drop.over{border-color:var(--accent); background:#fff}
+  .drop input{display:none}
+  .drop .hint{font-size:.84rem; color:var(--muted)}
+  .drop img{max-width:100%; max-height:150px; border:1px solid var(--line)}
+  .drop .fname{font-size:.76rem; color:var(--muted); word-break:break-all}
 
-  /* ---------- Upload zone ---------- */
-  .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 24px; }
-  @media (max-width: 640px) { .upload-grid { grid-template-columns: 1fr; } }
-  .upload-zone {
-    position: relative; border-radius: 18px; padding: 32px 20px; text-align: center; cursor: pointer;
-    background: rgba(255,255,255,0.03); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    border: 1.5px dashed rgba(255,255,255,0.16);
-    transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
-    transform-style: preserve-3d; will-change: transform;
-    min-height: 220px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  .opt{display:flex; align-items:center; gap:10px; margin:26px 0; font-size:.88rem; color:var(--muted); cursor:pointer}
+  .opt input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+  .btn{
+    width:100%; padding:16px; border:none; cursor:pointer; background:var(--ink); color:#FAFAF7;
+    font-family:inherit; font-size:.82rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    border-radius:3px; transition:background .18s ease, opacity .18s ease;
   }
-  .upload-zone.dragover, .upload-zone:hover { border-color: #E50914; background: rgba(229,9,20,0.06); }
-  .upload-zone input { display: none; }
-  .upload-icon { font-size: 2.2rem; margin-bottom: 10px; opacity: 0.8; }
-  .upload-label { font-weight: 600; font-size: 0.95rem; margin-bottom: 6px; }
-  .upload-hint { font-size: 0.78rem; color: #666; }
-  .upload-preview { max-width: 100%; max-height: 140px; border-radius: 10px; margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.1); }
-  .upload-filename { font-size: 0.8rem; color: #aaa; word-break: break-all; padding: 0 8px; }
+  .btn:hover:not(:disabled){background:var(--accent); color:#fff}
+  .btn:disabled{opacity:.28; cursor:not-allowed}
 
-  /* ---------- Nut chinh ---------- */
-  .btn-main {
-    width: 100%; padding: 16px; border: none; border-radius: 12px; cursor: pointer;
-    background: linear-gradient(90deg,#E50914,#FF3D6E); color:#fff; font-weight:700; font-size:1.05rem;
-    letter-spacing: 0.5px; box-shadow: 0 8px 28px rgba(229,9,20,0.35);
-    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
-    margin-bottom: 50px;
+  .loading{display:none; padding:48px 0; text-align:center; color:var(--muted); font-size:.88rem}
+  .loading.on{display:block}
+  .dots::after{content:"";animation:dots 1.2s steps(4,end) infinite}
+  @keyframes dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+
+  .results{display:none}
+  .results.on{display:block; animation:fade .35s ease}
+  .verdict{background:var(--dark); color:#F2F2EC; padding:34px 32px; margin:40px 0 34px; border-radius:2px}
+  .verdict .eyebrow{color:#9A9A90}
+  .verdict .label{
+    font-family:'Anton',Impact,sans-serif; text-transform:uppercase;
+    font-size:clamp(2.4rem,6vw,4rem); line-height:1; letter-spacing:.01em;
   }
-  .btn-main:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 36px rgba(255,61,110,0.5); }
-  .btn-main:disabled { opacity: 0.35; cursor: not-allowed; }
+  .verdict.match .label{color:#8FC08A}
+  .verdict.nomatch .label{color:#E0796C}
+  .verdict .sub{color:#A7A79C; font-size:.92rem; margin-top:8px}
 
-  /* Checkbox Grad-CAM */
-  .gradcam-toggle {
-    display: flex; align-items: center; gap: 10px; margin-bottom: 20px; padding: 14px 16px;
-    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
-    cursor: pointer; user-select: none; font-size: 0.88rem; color: #ccc;
+  .metric{display:flex; align-items:flex-end; gap:16px; margin-top:26px}
+  .metric .num{font-family:'Anton',Impact,sans-serif; font-size:3.4rem; line-height:.9; color:#F2F2EC}
+  .metric .cap{font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:#9A9A90; padding-bottom:6px}
+  .bar{height:3px; background:#2E2E28; margin-top:16px; overflow:hidden}
+  .bar i{display:block; height:100%; width:0; background:var(--ink); transition:width .9s cubic-bezier(.65,0,.35,1)}
+  .verdict.match .bar i{background:#8FC08A}
+  .verdict.nomatch .bar i{background:#E0796C}
+
+  figure{margin:0}
+  figure img{width:100%; border:1px solid var(--line); background:#000}
+  figcaption{font-size:.74rem; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-top:8px}
+
+  table{width:100%; border-collapse:collapse; font-size:.86rem; margin-top:8px}
+  th{
+    text-align:left; font-size:.7rem; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);
+    font-weight:700; padding:10px 12px 10px 0; border-bottom:1px solid var(--ink);
   }
-  .gradcam-toggle input { width: 18px; height: 18px; accent-color: #E50914; cursor: pointer; }
+  td{padding:11px 12px 11px 0; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums}
+  tbody tr:hover td{background:var(--card)}
 
-  /* Section "Ve he thong" */
-  .about-section {
-    margin-top: 60px; border-radius: 18px; padding: 28px;
-    background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.07);
-  }
-  .about-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 0.85rem; }
-  .about-table th { text-align: left; color: #888; font-weight: 600; padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.1); text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.5px; }
-  .about-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #ddd; }
-  .about-table tr:hover td { background: rgba(255,255,255,0.02); }
-  .about-desc { color: #999; font-size: 0.86rem; line-height: 1.6; margin-top: 18px; }
+  .facts{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:30px; margin-top:8px}
+  .fact h3{font-family:'Anton',Impact,sans-serif; text-transform:uppercase; font-size:1.08rem; letter-spacing:.02em; margin-bottom:8px}
+  .fact p{font-size:.88rem; color:var(--muted)}
+  .fact{background:var(--card); border:1px solid var(--line); padding:24px 22px}
+  .fact .idx{font-size:.72rem; letter-spacing:.14em; color:var(--accent); font-weight:700; margin-bottom:8px}
 
-  /* ---------- Loading ---------- */
-  .loading-wrap { display: none; text-align: center; padding: 50px 0; }
-  .loading-wrap.active { display: block; }
-  .spinner-3d {
-    width: 64px; height: 64px; margin: 0 auto 18px;
-    border-radius: 50%;
-    background: conic-gradient(from 0deg, #E50914, #FF3D6E, #B026FF, #E50914);
-    animation: spin 1s linear infinite;
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 8px));
-    mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 8px));
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .loading-text { color: #888; font-size: 0.9rem; }
-
-  /* ---------- Ket qua ---------- */
-  .results-wrap { display: none; }
-  .results-wrap.active { display: block; animation: fadeUp 0.5s ease; }
-  @keyframes fadeUp { from { opacity:0; transform: translateY(20px);} to { opacity:1; transform:translateY(0);} }
-
-  .preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
-  @media (max-width: 640px) { .preview-grid { grid-template-columns: 1fr; } }
-  .preview-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 14px; text-align: center; }
-  .preview-card img { max-width: 100%; border-radius: 8px; background: #000; }
-  .preview-card .cap { font-size: 0.78rem; color: #888; margin-top: 8px; }
-
-  .verdict-card {
-    position: relative; overflow: hidden; border-radius: 22px; padding: 48px 28px; text-align: center; margin-bottom: 34px;
-    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
-    transform-style: preserve-3d; will-change: transform;
-  }
-  .verdict-match { background: linear-gradient(150deg, rgba(20,80,45,0.5), rgba(10,30,18,0.5)); border: 1px solid rgba(46,204,113,0.4); }
-  .verdict-nomatch { background: linear-gradient(150deg, rgba(90,15,20,0.5), rgba(30,8,10,0.5)); border: 1px solid rgba(229,9,20,0.5); }
-  .verdict-icon { font-size: 3rem; margin-bottom: 8px; }
-  .verdict-label { font-family: 'Bebas Neue', sans-serif; font-size: 3rem; letter-spacing: 2px; }
-  .verdict-match .verdict-label { color: #2ecc71; }
-  .verdict-nomatch .verdict-label { color: #FF3B44; }
-  .verdict-sub { color: #999; font-size: 0.92rem; margin-top: 8px; }
-
-  .model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 16px; margin-bottom: 30px; }
-  .model-card {
-    position: relative; overflow: hidden; border-radius: 16px; padding: 24px 18px; text-align: center;
-    background: rgba(255,255,255,0.03); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255,255,255,0.08);
-    transition: transform 0.3s ease, border-color 0.3s ease;
-    transform-style: preserve-3d; will-change: transform;
-  }
-  .model-card.featured { border-color: rgba(229,9,20,0.6); background: linear-gradient(160deg, rgba(60,15,15,0.4), rgba(255,255,255,0.02)); }
-  .model-card .blob { position:absolute; width:100px; height:100px; border-radius:50%; background:radial-gradient(circle,#E50914,transparent 70%); filter:blur(20px); opacity:0.3; bottom:-30px; right:-30px; z-index:0; }
-  .model-card > * { position: relative; z-index: 1; }
-  .model-name { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #ccc; margin-bottom: 14px; }
-  .gauge-wrap { position: relative; width: 88px; height: 88px; margin: 0 auto 12px; }
-  .gauge-wrap svg { transform: rotate(-90deg); }
-  .gauge-bg { fill: none; stroke: rgba(255,255,255,0.08); stroke-width: 7; }
-  .gauge-fg { fill: none; stroke-width: 7; stroke-linecap: round; transition: stroke-dashoffset 1s cubic-bezier(0.65,0,0.35,1); }
-  .gauge-value { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family:'Bebas Neue',sans-serif; font-size: 1.3rem; }
-  .model-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; }
-  .badge-match { background: rgba(46,204,113,0.15); color: #2ecc71; }
-  .badge-nomatch { background: rgba(229,9,20,0.15); color: #FF3B44; }
-
-  .agree-note { padding: 14px 18px; border-radius: 12px; font-size: 0.86rem; margin-bottom: 20px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); color: #aaa; }
-
-  .footnote { color: #666; font-size: 0.8rem; line-height: 1.6; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 18px; margin-top: 20px; }
-  .error-box { background: rgba(229,9,20,0.1); border: 1px solid #E50914; border-radius: 12px; padding: 16px; color: #ff8a8a; font-size: 0.9rem; margin-bottom: 24px; display:none; }
-  .error-box.active { display: block; }
+  .note{font-size:.82rem; color:var(--muted); border-top:1px solid var(--line); padding-top:16px; margin-top:34px}
+  .err{display:none; border-left:2px solid var(--no); padding:10px 14px; margin-bottom:20px; font-size:.88rem; color:var(--no)}
+  .err.on{display:block}
+  footer{border-top:1px solid var(--line); margin-top:70px; padding-top:20px; font-size:.76rem; color:var(--muted)}
 </style>
 </head>
 <body>
+<div class="wrap">
 
-<div class="orb orb1"></div>
-<div class="orb orb2"></div>
-<div class="orb orb3"></div>
+  <header>
+    <div class="brand">Xác thực chữ ký<span>.</span></div>
+    <div class="brand-sub">Đồ án tốt nghiệp · Khoa học dữ liệu</div>
+  </header>
 
-<div class="page">
-
-  <nav>
-    <div class="logo">SIGNATURE<span>VERIFY</span></div>
-    <div class="nav-tag">Đồ án tốt nghiệp · Khoa học dữ liệu</div>
-  </nav>
-
-  <section class="hero">
-    <div class="hero-title">XÁC THỰC<br><span class="accent">CHỮ KÝ</span> THÔNG MINH</div>
-    <p class="hero-sub">Hệ thống kết hợp đặc trưng thống kê thủ công (Hu Moments, GLCM) và học sâu
-      (Siamese Network) để phát hiện chữ ký giả mạo, ứng dụng trong phòng chống gian lận tài chính-ngân hàng.</p>
-    <div class="hero-badges">
-      <div class="badge">Dataset: <b>CEDAR</b></div>
-      <div class="badge">ROC-AUC: <b>~0.90</b></div>
-      <div class="badge">4 mô hình so sánh</div>
-    </div>
+  <section>
+    <p class="eyebrow">Hệ thống xác thực chữ ký viết tay</p>
+    <h1>So sánh hai chữ ký<br><em>Phát hiện giả mạo</em></h1>
+    <p class="lede">Kết hợp đặc trưng thống kê thủ công và học sâu để xác định hai chữ ký có cùng
+      một người ký hay không.</p>
   </section>
 
-  <div class="section-title">VÌ SAO CHỌN HỆ THỐNG NÀY</div>
-  <div class="feature-grid" id="featureGrid">
-    <div class="feature-card tilt-card"><div class="blob" style="background:radial-gradient(circle,#E50914,transparent 70%)"></div>
-      <div class="feature-icon">🧬</div><div class="feature-title">Kết hợp 2 hướng tiếp cận</div>
-      <div class="feature-desc">Đặc trưng thống kê thủ công kết hợp embedding học sâu từ Siamese Network.</div></div>
-    <div class="feature-card tilt-card"><div class="blob" style="background:radial-gradient(circle,#B026FF,transparent 70%)"></div>
-      <div class="feature-icon">📊</div><div class="feature-title">So sánh 4 mô hình</div>
-      <div class="feature-desc">RF, SVM, Siamese Network và Combined được đánh giá song song, minh bạch.</div></div>
-    <div class="feature-card tilt-card"><div class="blob" style="background:radial-gradient(circle,#FF3D6E,transparent 70%)"></div>
-      <div class="feature-icon">🎯</div><div class="feature-title">Hiệu chỉnh theo rủi ro</div>
-      <div class="feature-desc">Ngưỡng quyết định chọn bằng EER trên validation, phù hợp rủi ro ngân hàng.</div></div>
-    <div class="feature-card tilt-card"><div class="blob" style="background:radial-gradient(circle,#E50914,transparent 70%)"></div>
-      <div class="feature-icon">🔍</div><div class="feature-title">Phân tích minh bạch</div>
-      <div class="feature-desc">Grad-CAM trực quan hóa vùng ảnh mô hình tập trung khi ra quyết định.</div></div>
-  </div>
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="verify">Xác thực</button>
+    <button class="tab-btn" data-tab="about">Giới thiệu &amp; số liệu</button>
+  </nav>
 
-  <div class="section-title">TẢI LÊN CHỮ KÝ</div>
-  <div class="upload-grid">
-    <div class="upload-zone tilt-card" id="zoneRef">
-      <input type="file" id="fileRef" accept="image/*">
-      <div class="upload-icon">📄</div>
-      <div class="upload-label">Chữ ký mẫu (reference)</div>
-      <div class="upload-hint">Kéo thả hoặc bấm để chọn ảnh</div>
-    </div>
-    <div class="upload-zone tilt-card" id="zoneQuery">
-      <input type="file" id="fileQuery" accept="image/*">
-      <div class="upload-icon">📝</div>
-      <div class="upload-label">Chữ ký cần kiểm tra (query)</div>
-      <div class="upload-hint">Kéo thả hoặc bấm để chọn ảnh</div>
-    </div>
-  </div>
+  <div class="panel active" id="panel-verify">
 
-  <div class="error-box" id="errorBox"></div>
+    <div class="status" id="status">Đang tải mô hình…</div>
 
-  <label class="gradcam-toggle">
-    <input type="checkbox" id="gradcamToggle">
-    🔬 Hiển thị Grad-CAM (giải thích vùng ảnh mô hình tập trung khi ra quyết định)
-  </label>
-
-  <button class="btn-main" id="btnCompare" disabled>🔍  SO SÁNH CHỮ KÝ</button>
-
-  <div class="loading-wrap" id="loadingWrap">
-    <div class="spinner-3d"></div>
-    <div class="loading-text">Đang chạy 4 mô hình...</div>
-  </div>
-
-  <div class="results-wrap" id="resultsWrap">
-    <div class="section-title">ẢNH SAU TIỀN XỬ LÝ</div>
-    <div class="preview-grid">
-      <div class="preview-card"><img id="imgRefResult"><div class="cap">Reference</div></div>
-      <div class="preview-card"><img id="imgQueryResult"><div class="cap">Query</div></div>
+    <div class="grid2">
+      <div>
+        <div class="slot-label"><i>01</i> Chữ ký mẫu <small>reference</small></div>
+        <label class="drop" id="dropRef">
+          <input type="file" id="fileRef" accept="image/*">
+          <div class="hint">Kéo thả hoặc bấm để chọn ảnh</div>
+        </label>
+      </div>
+      <div>
+        <div class="slot-label"><i>02</i> Chữ ký cần kiểm tra <small>query</small></div>
+        <label class="drop" id="dropQuery">
+          <input type="file" id="fileQuery" accept="image/*">
+          <div class="hint">Kéo thả hoặc bấm để chọn ảnh</div>
+        </label>
+      </div>
     </div>
 
-    <div id="verdictCard"></div>
+    <label class="opt">
+      <input type="checkbox" id="gradcamToggle">
+      Hiển thị Grad-CAM — vùng ảnh mô hình tập trung khi ra quyết định
+    </label>
 
-    <div class="section-title">CHI TIẾT TỪNG MÔ HÌNH</div>
-    <div class="model-grid" id="modelGrid"></div>
+    <div class="err" id="errorBox"></div>
+    <button class="btn" id="btnCompare" disabled>So sánh chữ ký</button>
 
-    <div class="agree-note" id="agreeNote"></div>
+    <div class="loading" id="loading"><span class="dots">Đang phân tích</span></div>
 
-    <div id="gradcamSection"></div>
+    <div class="results" id="results">
+      <div class="verdict" id="verdict"></div>
 
-    <p class="footnote">Điểm số Siamese là -khoảng cách embedding (chuẩn hóa hiển thị 0-1). Điểm RF/Combined
-      là xác suất phân loại. Điểm SVM là decision function (chuẩn hóa hiển thị). Ngưỡng quyết định chọn bằng
-      Equal Error Rate (EER) trên tập validation, cố định trước khi đánh giá test.</p>
+      <p class="eyebrow">Ảnh sau tiền xử lý</p>
+      <div class="grid2">
+        <figure><img id="imgRef"><figcaption>Chữ ký mẫu</figcaption></figure>
+        <figure><img id="imgQuery"><figcaption>Chữ ký cần kiểm tra</figcaption></figure>
+      </div>
+
+      <div id="gradcamBlock"></div>
+
+      <p class="note" id="resultNote"></p>
+    </div>
   </div>
 
-  <div class="about-section" id="aboutSection" style="display:none;">
-    <div class="section-title">VỀ HỆ THỐNG · SỐ LIỆU HIỆU NĂNG</div>
-    <div id="metricsTableWrap"></div>
-    <p class="about-desc">
-      <b>Phương pháp</b>: kết hợp đặc trưng thống kê thủ công (Hu Moments, GLCM, tỷ lệ nét, số điểm giao cắt)
-      và học sâu (Siamese Network, kiến trúc CNN + Contrastive/Triplet Loss). Đánh giá trên bộ dữ liệu CEDAR,
-      chia writer-independent (writer ở tập test không xuất hiện ở tập train), ngưỡng quyết định chọn bằng
-      Equal Error Rate trên tập validation.
-    </p>
+  <div class="panel" id="panel-about">
+
+    <section style="padding-top:0">
+      <p class="eyebrow">Phương pháp</p>
+      <h2>Hai hướng tiếp cận<br>một kết luận</h2>
+      <p class="lede">Đặc trưng thống kê thủ công (Hu Moments, GLCM, tỷ lệ nét trên/dưới baseline,
+        số điểm giao cắt nét bút) kết hợp với embedding học sâu từ Siamese Network. Mô hình được
+        huấn luyện và đánh giá trên bộ dữ liệu CEDAR.</p>
+      <div class="facts" style="margin-top:28px">
+        <div class="fact">
+          <div class="idx">01</div>
+          <h3>Writer-independent</h3>
+          <p>Người ký ở tập kiểm thử không xuất hiện trong tập huấn luyện, nên kết quả phản ánh đúng
+            khả năng xác thực chữ ký của người chưa từng thấy.</p>
+        </div>
+        <div class="fact">
+          <div class="idx">02</div>
+          <h3>Bốn mô hình đối chiếu</h3>
+          <p>Random Forest, SVM, Siamese Network và mô hình kết hợp được đánh giá trên cùng một
+            giao thức để so sánh công bằng.</p>
+        </div>
+        <div class="fact">
+          <div class="idx">03</div>
+          <h3>Ngưỡng theo rủi ro</h3>
+          <p>Ngưỡng quyết định chọn trên tập validation và cố định trước khi đánh giá, có thể hiệu
+            chỉnh theo mức FAR mà tổ chức chấp nhận.</p>
+        </div>
+        <div class="fact">
+          <div class="idx">04</div>
+          <h3>Giải thích được</h3>
+          <p>Grad-CAM trực quan hóa vùng ảnh mà mô hình tập trung, giúp kiểm chứng quyết định thay
+            vì chỉ tin vào con số.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <p class="eyebrow">Kết quả đánh giá</p>
+      <h2>Số liệu trên tập kiểm thử</h2>
+      <div id="metricsWrap" style="margin-top:20px"><p class="lede">Đang tải…</p></div>
+      <p class="note">FAR — tỷ lệ chữ ký giả bị chấp nhận nhầm. FRR — tỷ lệ chữ ký thật bị từ chối
+        nhầm. Trong ứng dụng ngân hàng, FAR là chỉ số được ưu tiên kiểm soát.</p>
+    </section>
   </div>
 
+  <footer>Đồ án tốt nghiệp · Xây dựng hệ thống xác thực chữ ký viết tay dựa trên kết hợp đặc trưng
+    thống kê và học sâu · Dữ liệu CEDAR</footer>
 </div>
 
 <script>
-  // ---------- Load metrics "Ve he thong" ----------
-  fetch('/api/metrics').then(r => r.json()).then(data => {
-    if (!data.available || !data.rows.length) return;
-    const cols = ['model', 'accuracy', 'roc_auc', 'FAR', 'FRR', 'precision', 'recall', 'f1'].filter(c => c in data.rows[0]);
-    let html = '<table class="about-table"><thead><tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
-    data.rows.forEach(row => {
-      html += '<tr>' + cols.map(c => {
-        const v = row[c];
-        return `<td>${typeof v === 'number' ? v.toFixed(4) : v}</td>`;
-      }).join('') + '</tr>';
+  document.querySelectorAll('.tab-btn').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      document.getElementById('panel-'+b.dataset.tab).classList.add('active');
+      window.scrollTo({top:0,behavior:'smooth'});
     });
-    html += '</tbody></table>';
-    document.getElementById('metricsTableWrap').innerHTML = html;
-    document.getElementById('aboutSection').style.display = 'block';
-  }).catch(() => {});
-</script>
-<script>
-  // ---------- 3D tilt effect theo chuot ----------
-  function applyTilt(el, maxDeg) {
-    maxDeg = maxDeg || 8;
-    el.addEventListener('mousemove', (e) => {
-      const r = el.getBoundingClientRect();
-      const x = e.clientX - r.left, y = e.clientY - r.top;
-      const rx = ((y - r.height/2) / (r.height/2)) * -maxDeg;
-      const ry = ((x - r.width/2) / (r.width/2)) * maxDeg;
-      el.style.transform = `perspective(900px) rotateX(${rx}deg) rotateY(${ry}deg) scale3d(1.015,1.015,1.015)`;
+  });
+
+  fetch('/api/active-model').then(r=>r.json()).then(d=>{
+    const el=document.getElementById('status');
+    if(!d.ready){el.textContent='Mô hình chưa sẵn sàng — kiểm tra thư mục model_artifacts/';return;}
+    let t='Mô hình: '+d.display_name;
+    if(d.info&&d.info.accuracy_test) t+=' · accuracy trên test '+(d.info.accuracy_test*100).toFixed(1)+'%';
+    el.textContent=t;
+  }).catch(()=>{});
+
+  fetch('/api/metrics').then(r=>r.json()).then(d=>{
+    const w=document.getElementById('metricsWrap');
+    if(!d.available||!d.rows.length){w.innerHTML='<p class="lede">Chưa có file kết quả. Chạy 05, 06, 08 để tạo số liệu.</p>';return;}
+    const cols=['model','accuracy','roc_auc','FAR','FRR'].filter(c=>c in d.rows[0]);
+    const names={model:'Mô hình',accuracy:'Accuracy',roc_auc:'ROC-AUC',FAR:'FAR',FRR:'FRR'};
+    let h='<table><thead><tr>'+cols.map(c=>'<th>'+(names[c]||c)+'</th>').join('')+'</tr></thead><tbody>';
+    d.rows.forEach(r=>{h+='<tr>'+cols.map(c=>'<td>'+(typeof r[c]==='number'?r[c].toFixed(4):r[c])+'</td>').join('')+'</tr>';});
+    w.innerHTML=h+'</tbody></table>';
+  }).catch(()=>{});
+
+  let refFile=null, queryFile=null;
+
+  function setupDrop(dropId,inputId,onPick){
+    const d=document.getElementById(dropId), i=document.getElementById(inputId);
+    d.addEventListener('dragover',e=>{e.preventDefault();d.classList.add('over');});
+    d.addEventListener('dragleave',()=>d.classList.remove('over'));
+    d.addEventListener('drop',e=>{
+      e.preventDefault();d.classList.remove('over');
+      if(e.dataTransfer.files.length){i.files=e.dataTransfer.files;onPick(e.dataTransfer.files[0],d);}
     });
-    el.addEventListener('mouseleave', () => {
-      el.style.transform = 'perspective(900px) rotateX(0) rotateY(0) scale3d(1,1,1)';
-    });
-  }
-  document.querySelectorAll('.tilt-card').forEach(el => applyTilt(el, 6));
-
-  // ---------- Upload logic ----------
-  let refFile = null, queryFile = null;
-
-  function setupUpload(zoneId, inputId, onSelect) {
-    const zone = document.getElementById(zoneId);
-    const input = document.getElementById(inputId);
-    zone.addEventListener('click', () => input.click());
-    zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
-    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
-    zone.addEventListener('drop', (e) => {
-      e.preventDefault(); zone.classList.remove('dragover');
-      if (e.dataTransfer.files.length) { input.files = e.dataTransfer.files; onSelect(e.dataTransfer.files[0], zone); }
-    });
-    input.addEventListener('change', () => { if (input.files.length) onSelect(input.files[0], zone); });
+    i.addEventListener('change',()=>{if(i.files.length)onPick(i.files[0],d);});
   }
 
-  function showPreview(file, zone) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      zone.innerHTML = `<img class="upload-preview" src="${e.target.result}">
-        <div class="upload-filename">${file.name}</div>`;
-    };
-    reader.readAsDataURL(file);
+  function preview(f,d){
+    const fr=new FileReader();
+    fr.onload=e=>{d.innerHTML='<img src="'+e.target.result+'"><div class="fname">'+f.name+'</div>';};
+    fr.readAsDataURL(f);
   }
 
-  setupUpload('zoneRef', 'fileRef', (file, zone) => { refFile = file; showPreview(file, zone); checkReady(); });
-  setupUpload('zoneQuery', 'fileQuery', (file, zone) => { queryFile = file; showPreview(file, zone); checkReady(); });
+  setupDrop('dropRef','fileRef',(f,d)=>{refFile=f;preview(f,d);ready();});
+  setupDrop('dropQuery','fileQuery',(f,d)=>{queryFile=f;preview(f,d);ready();});
+  function ready(){document.getElementById('btnCompare').disabled=!(refFile&&queryFile);}
 
-  function checkReady() {
-    document.getElementById('btnCompare').disabled = !(refFile && queryFile);
+  function norm(score,model){
+    if(model==='siamese')return Math.max(0,Math.min(1,1/(1+Math.exp(-score/3))));
+    if(model==='svm')return Math.max(0,Math.min(1,1/(1+Math.exp(-score))));
+    return Math.max(0,Math.min(1,score));
   }
 
-  // ---------- Goi API va hien ket qua ----------
-  function normalizeScore(score, modelKey) {
-    // Chuan hoa ve [0,1] chi de HIEN THI truc quan (khong doi logic quyet dinh
-    // - quyet dinh khop/khong khop van dung dung score/threshold that tu API)
-    if (modelKey === 'siamese') return Math.max(0, Math.min(1, 1 / (1 + Math.exp(-score/3))));
-    if (modelKey === 'svm') return Math.max(0, Math.min(1, 1 / (1 + Math.exp(-score))));
-    return Math.max(0, Math.min(1, score));
-  }
-
-  function renderGauge(value01, color) {
-    const r = 38, circ = 2 * Math.PI * r;
-    const offset = circ * (1 - value01);
-    return `<div class="gauge-wrap">
-      <svg width="88" height="88"><circle class="gauge-bg" cx="44" cy="44" r="${r}"></circle>
-      <circle class="gauge-fg" cx="44" cy="44" r="${r}" stroke="${color}"
-        stroke-dasharray="${circ}" stroke-dashoffset="${circ}" id="gauge-tmp"></circle></svg>
-      <div class="gauge-value" style="color:${color}">${Math.round(value01*100)}</div>
-    </div>`;
-  }
-
-  document.getElementById('btnCompare').addEventListener('click', async () => {
-    const errorBox = document.getElementById('errorBox');
-    errorBox.classList.remove('active');
-    document.getElementById('resultsWrap').classList.remove('active');
-    document.getElementById('loadingWrap').classList.add('active');
-    document.getElementById('btnCompare').disabled = true;
-
-    try {
-      const formData = new FormData();
-      formData.append('reference', refFile);
-      formData.append('query', queryFile);
-
-      const includeGradcam = document.getElementById('gradcamToggle').checked;
-      const resp = await fetch(`/api/verify?include_gradcam=${includeGradcam}`, { method: 'POST', body: formData });
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({detail: 'Loi khong xac dinh'}));
-        throw new Error(err.detail || `HTTP ${resp.status}`);
-      }
-      const data = await resp.json();
-      renderResults(data);
-    } catch (err) {
-      errorBox.textContent = '⚠ Lỗi: ' + err.message + ' (kiểm tra backend đã chạy và model_artifacts/ đã có đủ file chưa)';
-      errorBox.classList.add('active');
-    } finally {
-      document.getElementById('loadingWrap').classList.remove('active');
-      document.getElementById('btnCompare').disabled = false;
+  document.getElementById('btnCompare').addEventListener('click',async()=>{
+    const err=document.getElementById('errorBox'), btn=document.getElementById('btnCompare');
+    err.classList.remove('on');
+    document.getElementById('results').classList.remove('on');
+    document.getElementById('loading').classList.add('on');
+    btn.disabled=true;
+    try{
+      const fd=new FormData();
+      fd.append('reference',refFile);
+      fd.append('query',queryFile);
+      const g=document.getElementById('gradcamToggle').checked;
+      const res=await fetch('/api/verify?include_gradcam='+g,{method:'POST',body:fd});
+      if(!res.ok){const e=await res.json().catch(()=>({detail:'Lỗi không xác định'}));throw new Error(e.detail);}
+      render(await res.json());
+    }catch(e){
+      err.textContent='Lỗi: '+e.message;err.classList.add('on');
+    }finally{
+      document.getElementById('loading').classList.remove('on');btn.disabled=false;
     }
   });
 
-  function renderResults(data) {
-    document.getElementById('imgRefResult').src = data.reference_image;
-    document.getElementById('imgQueryResult').src = data.query_image;
+  function render(d){
+    document.getElementById('imgRef').src=d.reference_image;
+    document.getElementById('imgQuery').src=d.query_image;
 
-    const mainMatch = data.main_match;
-    const mainName = data.results[data.main_model].name;
-    document.getElementById('verdictCard').innerHTML = `
-      <div class="verdict-card tilt-card ${mainMatch ? 'verdict-match' : 'verdict-nomatch'}">
-        <div class="verdict-icon">${mainMatch ? '✅' : '❌'}</div>
-        <div class="verdict-label">${mainMatch ? 'KHỚP' : 'KHÔNG KHỚP'}</div>
-        <div class="verdict-sub">${mainMatch ? 'Cùng người ký' : 'Nghi ngờ giả mạo'} · Kết luận theo ${mainName}</div>
-      </div>`;
-    applyTilt(document.querySelector('#verdictCard .tilt-card'), 4);
-
-    const order = ['combined', 'siamese', 'rf', 'svm'];
-    let gridHtml = '';
-    let matchCount = 0, total = 0;
-    order.forEach(key => {
-      if (!data.results[key]) return;
-      const r = data.results[key];
-      total++; if (r.match) matchCount++;
-      const val01 = normalizeScore(r.score, key);
-      const color = r.match ? '#2ecc71' : '#FF3B44';
-      gridHtml += `
-        <div class="model-card tilt-card ${r.featured ? 'featured' : ''}">
-          <div class="blob"></div>
-          <div class="model-name">${r.name}${r.featured ? ' ⭐' : ''}</div>
-          ${renderGauge(val01, color)}
-          <span class="model-badge ${r.match ? 'badge-match' : 'badge-nomatch'}">${r.match ? 'Khớp' : 'Không khớp'}</span>
-        </div>`;
-    });
-    document.getElementById('modelGrid').innerHTML = gridHtml;
-    document.querySelectorAll('#modelGrid .tilt-card').forEach(el => applyTilt(el, 6));
-
-    // Animate gauges sau khi da chen vao DOM
-    requestAnimationFrame(() => {
-      document.querySelectorAll('.gauge-fg').forEach((circle, i) => {
-        const r = 38, circ = 2 * Math.PI * r;
-        const key = order.filter(k => data.results[k])[i];
-        const val01 = normalizeScore(data.results[key].score, key);
-        setTimeout(() => { circle.style.strokeDashoffset = circ * (1 - val01); }, 50);
-      });
+    const key=d.main_model, r=d.results[key], ok=d.main_match;
+    const v=document.getElementById('verdict');
+    v.className='verdict '+(ok?'match':'nomatch');
+    v.innerHTML=
+      '<p class="eyebrow">Kết luận · '+r.name+'</p>'+
+      '<div class="label">'+(ok?'Khớp':'Không khớp')+'</div>'+
+      '<div class="sub">'+(ok?'Hai chữ ký nhiều khả năng cùng một người ký.':'Nghi ngờ giả mạo — hai chữ ký nhiều khả năng khác người ký.')+'</div>'+
+      '<div class="metric"><div class="num">'+Math.round(norm(r.score,key)*100)+'</div>'+
+      '<div class="cap">Độ tương đồng / 100</div></div>'+
+      '<div class="bar"><i id="barFill"></i></div>';
+    requestAnimationFrame(()=>{
+      setTimeout(()=>{
+        const b=document.getElementById('barFill');
+        if(b) b.style.width=(norm(r.score,key)*100)+'%';
+      },60);
     });
 
-    const note = document.getElementById('agreeNote');
-    if (matchCount === 0 || matchCount === total) {
-      note.textContent = '✓ Tất cả model đều đồng thuận kết quả — độ tin cậy cao.';
-    } else {
-      note.textContent = `⚠ Các model KHÔNG đồng thuận (${matchCount}/${total} model kết luận "Khớp"). Đây là trường hợp khó, nên xem xét thêm.`;
-    }
+    const gb=document.getElementById('gradcamBlock');
+    gb.innerHTML=(d.gradcam_reference&&d.gradcam_query)?
+      '<p class="eyebrow" style="margin-top:38px">Grad-CAM · vùng ảnh ảnh hưởng đến quyết định</p>'+
+      '<div class="grid2">'+
+      '<figure><img src="'+d.gradcam_reference+'"><figcaption>Chữ ký mẫu</figcaption></figure>'+
+      '<figure><img src="'+d.gradcam_query+'"><figcaption>Chữ ký cần kiểm tra</figcaption></figure>'+
+      '</div>':'';
 
-    const gradcamSection = document.getElementById('gradcamSection');
-    if (data.gradcam_reference && data.gradcam_query) {
-      gradcamSection.innerHTML = `
-        <div class="section-title">GRAD-CAM · VÙNG ẢNH MÔ HÌNH TẬP TRUNG</div>
-        <div class="preview-grid">
-          <div class="preview-card"><img src="${data.gradcam_reference}"><div class="cap">Reference — vùng đỏ/vàng = ảnh hưởng lớn</div></div>
-          <div class="preview-card"><img src="${data.gradcam_query}"><div class="cap">Query — vùng đỏ/vàng = ảnh hưởng lớn</div></div>
-        </div>`;
-    } else {
-      gradcamSection.innerHTML = '';
-    }
+    document.getElementById('resultNote').textContent=
+      'Độ tương đồng được chuẩn hóa về thang 0–100 để dễ đọc; quyết định khớp hay không dùng đúng '+
+      'điểm số và ngưỡng gốc của mô hình. Ngưỡng được chọn trên tập validation và cố định trước khi đánh giá.';
 
-    document.getElementById('resultsWrap').classList.add('active');
-    document.getElementById('resultsWrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.getElementById('results').classList.add('on');
+    document.getElementById('results').scrollIntoView({behavior:'smooth',block:'start'});
   }
 </script>
 </body>

@@ -1,3 +1,6 @@
+# Backend API - FastAPI phuc vu ca model that va frontend tinh
+# Cai bang: pip install -r requirements.txt
+
 --extra-index-url https://download.pytorch.org/whl/cpu
 
 fastapi>=0.110

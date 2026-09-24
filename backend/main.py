@@ -143,6 +143,31 @@ def load_all_models():
             MODELS["combined_threshold"] = json.load(f)["threshold"]
         MODELS["has_combined"] = True
 
+    # Neu da chay 11_optimize_accuracy.py: dung model + nguong toi uu accuracy
+    cfg_path = MODEL_DIR / "decision_config.json"
+    MODELS["decision_model"] = "combined" if MODELS["has_combined"] else "siamese"
+    MODELS["decision_info"] = None
+    if cfg_path.exists():
+        try:
+            with open(cfg_path) as f:
+                cfg = json.load(f)
+            m = cfg["model"]
+            if m == "combined" and not MODELS["has_combined"]:
+                m = "siamese"
+            else:
+                thr = float(cfg["threshold"])
+                if m == "combined":
+                    MODELS["combined_threshold"] = thr
+                elif m == "siamese":
+                    MODELS["siamese_threshold"] = thr
+                else:
+                    MODELS["pairwise_thresholds"][f"{m}_threshold"] = thr
+            MODELS["decision_model"] = m
+            MODELS["decision_info"] = cfg
+        except Exception as e:
+            print(f"[CANH BAO] Khong doc duoc decision_config.json: {e}")
+
+    print(f"Model ra quyet dinh: {MODELS['decision_model'].upper()}")
     print(f"Da load {len(siamese_models)} model Siamese, RF, SVM"
           f"{', Combined' if MODELS['has_combined'] else ''}.")
 
@@ -235,21 +260,26 @@ async def verify(reference: UploadFile = File(...), query: UploadFile = File(...
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Khong xu ly duoc anh: {e}")
 
-        results = {}
-        siamese_score, siamese_threshold, siamese_match = compute_siamese_verdict(ref_path, query_path)
-        results["siamese"] = {"name": "Siamese Network", "score": siamese_score, "threshold": siamese_threshold, "match": siamese_match}
+        # CHI CHAY MOT MODEL DUY NHAT (model ra quyet dinh) - nhanh hon va
+        # giao dien cung chi hien mot ket luan duy nhat.
+        main_model = MODELS.get("decision_model", "siamese")
+        display_names = {
+            "combined": "Combined (đặc trưng thủ công + học sâu)",
+            "siamese": "Siamese Network",
+            "rf": "Random Forest",
+            "svm": "SVM",
+        }
+        if main_model == "combined":
+            score, threshold, match = compute_combined_verdict(ref_path, query_path)
+        elif main_model == "siamese":
+            score, threshold, match = compute_siamese_verdict(ref_path, query_path)
+        else:
+            score, threshold, match = compute_classical_verdict(ref_path, query_path, main_model)
 
-        rf_score, rf_threshold, rf_match = compute_classical_verdict(ref_path, query_path, "rf")
-        results["rf"] = {"name": "Random Forest", "score": rf_score, "threshold": rf_threshold, "match": rf_match}
-
-        svm_score, svm_threshold, svm_match = compute_classical_verdict(ref_path, query_path, "svm")
-        results["svm"] = {"name": "SVM", "score": svm_score, "threshold": svm_threshold, "match": svm_match}
-
-        main_model = "siamese"
-        if MODELS.get("has_combined", False):
-            combined_score, combined_threshold, combined_match = compute_combined_verdict(ref_path, query_path)
-            results["combined"] = {"name": "Combined", "score": combined_score, "threshold": combined_threshold, "match": combined_match, "featured": True}
-            main_model = "combined"
+        results = {main_model: {
+            "name": display_names.get(main_model, main_model),
+            "score": score, "threshold": threshold, "match": match, "featured": True,
+        }}
 
         # Anh da tien xu ly, encode base64 de frontend hien thi truc tiep
         import base64
@@ -288,6 +318,22 @@ async def verify(reference: UploadFile = File(...), query: UploadFile = File(...
         response["gradcam_reference"] = f"data:image/png;base64,{gradcam_ref_b64}"
         response["gradcam_query"] = f"data:image/png;base64,{gradcam_query_b64}"
     return response
+
+
+@app.get("/api/active-model")
+def active_model():
+    """Thong tin model dang duoc dung de ra quyet dinh (hien tren giao dien)."""
+    names = {
+        "combined": "Combined (đặc trưng thủ công + học sâu)",
+        "siamese": "Siamese Network", "rf": "Random Forest", "svm": "SVM",
+    }
+    m = MODELS.get("decision_model")
+    return {
+        "model": m,
+        "display_name": names.get(m, m or ""),
+        "info": MODELS.get("decision_info"),
+        "ready": MODELS.get("ready", False),
+    }
 
 
 @app.get("/api/metrics")

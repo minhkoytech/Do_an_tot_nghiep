@@ -95,6 +95,15 @@
   .drop .hint{font-size:.84rem; color:var(--muted)}
   .drop img{max-width:100%; max-height:150px; border:1px solid var(--line)}
   .drop .fname{font-size:.76rem; color:var(--muted); word-break:break-all}
+  .drop-body{display:flex; flex-direction:column; align-items:center; gap:8px; width:100%}
+  .drop-actions{display:flex; gap:14px; margin-top:4px}
+  .drop-btn{
+    background:none; border:none; cursor:pointer; padding:4px 0;
+    font-family:inherit; font-size:.7rem; font-weight:700; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--muted); border-bottom:1px solid transparent;
+  }
+  .drop-btn:hover{color:var(--ink); border-bottom-color:var(--ink)}
+  .drop-btn.remove:hover{color:var(--no); border-bottom-color:var(--no)}
 
   .opt{display:flex; align-items:center; gap:10px; margin:26px 0; font-size:.88rem; color:var(--muted); cursor:pointer}
   .opt input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
@@ -184,14 +193,14 @@
         <div class="slot-label"><i>01</i> Chữ ký mẫu <small>reference</small></div>
         <label class="drop" id="dropRef">
           <input type="file" id="fileRef" accept="image/*">
-          <div class="hint">Kéo thả hoặc bấm để chọn ảnh</div>
+          <div class="drop-body"><div class="hint">Kéo thả hoặc bấm để chọn ảnh</div></div>
         </label>
       </div>
       <div>
         <div class="slot-label"><i>02</i> Chữ ký cần kiểm tra <small>query</small></div>
         <label class="drop" id="dropQuery">
           <input type="file" id="fileQuery" accept="image/*">
-          <div class="hint">Kéo thả hoặc bấm để chọn ảnh</div>
+          <div class="drop-body"><div class="hint">Kéo thả hoặc bấm để chọn ảnh</div></div>
         </label>
       </div>
     </div>
@@ -300,26 +309,47 @@
   }).catch(()=>{});
 
   let refFile=null, queryFile=null;
+  const EMPTY_HTML='<div class="hint">Kéo thả hoặc bấm để chọn ảnh</div>';
 
-  function setupDrop(dropId,inputId,onPick){
+  function setupDrop(dropId,inputId,setFile){
     const d=document.getElementById(dropId), i=document.getElementById(inputId);
+    const body=d.querySelector('.drop-body');
+
+    function clear(){
+      i.value='';                 // cho phep chon lai dung file vua xoa
+      setFile(null);
+      body.innerHTML=EMPTY_HTML;
+      document.getElementById('results').classList.remove('on');  // ket qua cu khong con dung
+      ready();
+    }
+
+    function show(f){
+      setFile(f);
+      const fr=new FileReader();
+      fr.onload=e=>{
+        body.innerHTML='<img src="'+e.target.result+'"><div class="fname">'+f.name+'</div>'+
+          '<div class="drop-actions">'+
+          '<button type="button" class="drop-btn change">Đổi ảnh</button>'+
+          '<button type="button" class="drop-btn remove">× Xóa</button></div>';
+        // Nut nam trong <label> nen phai chan hanh vi mo hop chon file mac dinh
+        body.querySelector('.remove').addEventListener('click',ev=>{ev.preventDefault();ev.stopPropagation();clear();});
+        body.querySelector('.change').addEventListener('click',ev=>{ev.preventDefault();ev.stopPropagation();i.click();});
+      };
+      fr.readAsDataURL(f);
+      ready();
+    }
+
     d.addEventListener('dragover',e=>{e.preventDefault();d.classList.add('over');});
     d.addEventListener('dragleave',()=>d.classList.remove('over'));
     d.addEventListener('drop',e=>{
       e.preventDefault();d.classList.remove('over');
-      if(e.dataTransfer.files.length){i.files=e.dataTransfer.files;onPick(e.dataTransfer.files[0],d);}
+      if(e.dataTransfer.files.length) show(e.dataTransfer.files[0]);
     });
-    i.addEventListener('change',()=>{if(i.files.length)onPick(i.files[0],d);});
+    i.addEventListener('change',()=>{if(i.files.length) show(i.files[0]);});
   }
 
-  function preview(f,d){
-    const fr=new FileReader();
-    fr.onload=e=>{d.innerHTML='<img src="'+e.target.result+'"><div class="fname">'+f.name+'</div>';};
-    fr.readAsDataURL(f);
-  }
-
-  setupDrop('dropRef','fileRef',(f,d)=>{refFile=f;preview(f,d);ready();});
-  setupDrop('dropQuery','fileQuery',(f,d)=>{queryFile=f;preview(f,d);ready();});
+  setupDrop('dropRef','fileRef',f=>{refFile=f;});
+  setupDrop('dropQuery','fileQuery',f=>{queryFile=f;});
   function ready(){document.getElementById('btnCompare').disabled=!(refFile&&queryFile);}
 
   function norm(score,model){

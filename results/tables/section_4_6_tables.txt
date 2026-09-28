@@ -1,0 +1,37 @@
+Bang: FAR theo loai gia mao va FRR tren tap kiem thu
+| Mô hình | FAR giả có kỹ năng | FAR giả ngẫu nhiên | FRR |
+|---|---|---|---|
+| Random Forest | 0,353 | 0,025 | 0,197 |
+| SVM | 0,389 | 0,029 | 0,162 |
+| Siamese Network | 0,381 | 0,049 | 0,123 |
+| Mô hình kết hợp | 0,376 | 0,052 | 0,114 |
+
+Bang: Thong ke hieu nang theo tung nguoi ky (10 nguoi ky tap kiem thu)
+| Mô hình | Chỉ số | Trung bình | Độ lệch chuẩn | Thấp nhất | Cao nhất |
+|---|---|---|---|---|---|
+| Random Forest | Accuracy | 0,775 | 0,093 | 0,640 | 0,912 |
+| Random Forest | FAR | 0,244 | 0,166 | 0,013 | 0,547 |
+| Random Forest | FRR | 0,197 | 0,091 | 0,080 | 0,360 |
+| SVM | Accuracy | 0,774 | 0,089 | 0,643 | 0,912 |
+| SVM | FAR | 0,269 | 0,174 | 0,018 | 0,573 |
+| SVM | FRR | 0,162 | 0,092 | 0,033 | 0,293 |
+| Siamese Network | Accuracy | 0,789 | 0,095 | 0,664 | 0,979 |
+| Siamese Network | FAR | 0,270 | 0,183 | 0,027 | 0,556 |
+| Siamese Network | FRR | 0,123 | 0,108 | 0,007 | 0,280 |
+| Mô hình kết hợp | Accuracy | 0,794 | 0,095 | 0,680 | 0,981 |
+| Mô hình kết hợp | FAR | 0,268 | 0,164 | 0,027 | 0,489 |
+| Mô hình kết hợp | FRR | 0,114 | 0,083 | 0,007 | 0,233 |
+
+Bang: Chi tiet tung nguoi ky - Mô hình kết hợp, sap xep theo FAR giam dan
+| Người ký | Accuracy | FAR | FRR |
+|---|---|---|---|
+| 50 | 0,704 | 0,489 | 0,007 |
+| 32 | 0,680 | 0,449 | 0,127 |
+| 44 | 0,757 | 0,382 | 0,033 |
+| 27 | 0,728 | 0,351 | 0,153 |
+| 13 | 0,728 | 0,329 | 0,187 |
+| 6 | 0,797 | 0,293 | 0,067 |
+| 33 | 0,805 | 0,187 | 0,207 |
+| 20 | 0,869 | 0,138 | 0,120 |
+| 14 | 0,885 | 0,036 | 0,233 |
+| 42 | 0,981 | 0,027 | 0,007 |

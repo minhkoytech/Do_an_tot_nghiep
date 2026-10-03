@@ -1,0 +1,7 @@
+model,pair_type,n,FAR,FRR
+rf,skilled_forgery,1500,0.38,
+rf,random_forgery,750,0.056,
+rf,genuine_genuine,1500,,0.18666666666666668
+svm,skilled_forgery,1500,0.406,
+svm,random_forgery,750,0.05466666666666667,
+svm,genuine_genuine,1500,,0.16066666666666668

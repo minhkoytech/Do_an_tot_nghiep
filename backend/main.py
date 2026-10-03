@@ -336,6 +336,60 @@ def active_model():
     }
 
 
+@app.get("/api/dashboard")
+def dashboard():
+    """
+    Gom toan bo so lieu cho tab Dashboard trong mot lan goi, doc truc tiep
+    tu cac file ket qua trong results/tables/. File nao chua co thi tra ve
+    danh sach rong, giao dien se tu an khoi tuong ung.
+    """
+    import pandas as pd
+    T = PROJECT_ROOT / "results" / "tables"
+
+    def read(*names):
+        frames = [pd.read_csv(T / n) for n in names if (T / n).exists()]
+        return pd.concat(frames, ignore_index=True) if frames else None
+
+    def rows(df):
+        return [] if df is None else json.loads(df.to_json(orient="records"))
+
+    comparison = read("final_model_comparison_with_combined.csv")
+    if comparison is None:
+        comparison = read("final_model_comparison.csv")
+
+    pairtype = read("pairwise_baseline_per_pairtype.csv", "siamese_per_pairtype.csv", "combined_per_pairtype.csv")
+    writer = read("pairwise_baseline_per_writer.csv", "siamese_per_writer.csv", "combined_per_writer.csv")
+    target_far = read("threshold_analysis_target_far.csv")
+    roc = read("roc_curves_test.csv")
+    acc_opt = read("accuracy_optimized_thresholds.csv")
+    icdar = read("external_test_icdar.csv")
+
+    # So sanh ICDAR voi CEDAR o DUNG loai nguong da dung khi kiem thu ICDAR:
+    # mo hinh ra quyet dinh dung nguong toi uu accuracy, cac mo hinh con lai dung EER.
+    if icdar is not None:
+        decision = (MODELS.get("decision_info") or {}).get("model")
+        cedar_acc = {}
+        if comparison is not None:
+            cedar_acc = dict(zip(comparison["model"], comparison["accuracy"]))
+        if decision and acc_opt is not None:
+            row = acc_opt[acc_opt["model"] == decision]
+            if len(row):
+                cedar_acc[decision] = float(row["accuracy_test"].iloc[0])
+        icdar["cedar_accuracy"] = icdar["model"].map(cedar_acc)
+
+    return {
+        "comparison": rows(comparison),
+        "pairtype": rows(pairtype),
+        "writer": rows(writer),
+        "target_far": rows(target_far),
+        "roc": rows(roc),
+        "accuracy_optimized": rows(acc_opt),
+        "icdar": rows(icdar),
+        "decision": MODELS.get("decision_info"),
+        "decision_model": MODELS.get("decision_model"),
+    }
+
+
 @app.get("/api/metrics")
 def get_metrics():
     """Doc bang so sanh 4 model tu ket qua da co san (neu co) - hien thi trong section 'Ve he thong'."""

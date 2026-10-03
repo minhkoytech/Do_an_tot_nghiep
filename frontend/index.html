@@ -161,6 +161,52 @@
   .note{font-size:.82rem; color:var(--muted); border-top:1px solid var(--line); padding-top:16px; margin-top:34px}
   .err{display:none; border-left:2px solid var(--no); padding:10px 14px; margin-bottom:20px; font-size:.88rem; color:var(--no)}
   .err.on{display:block}
+
+  /* ================= DASHBOARD ================= */
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:40px}
+  .kpi{background:var(--card); border:1px solid var(--line); padding:18px 18px 16px}
+  .kpi .k-label{font-size:.68rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--muted)}
+  .kpi .k-val{font-family:'Anton',Impact,sans-serif; font-size:2.3rem; line-height:1.05; margin-top:6px}
+  .kpi .k-sub{font-size:.76rem; color:var(--muted); margin-top:2px}
+  .kpi.dark{background:var(--dark); border-color:var(--dark); color:#F2F2EC}
+  .kpi.dark .k-label,.kpi.dark .k-sub{color:#9A9A90}
+  .kpi.dark .k-val{font-size:1.35rem; line-height:1.2; margin-top:10px}
+
+  .dash-block{background:var(--card); border:1px solid var(--line); padding:26px 24px; margin-bottom:22px}
+  .dash-block h3{font-family:'Anton',Impact,sans-serif; text-transform:uppercase; font-weight:400;
+    font-size:1.35rem; letter-spacing:.02em; margin-bottom:4px}
+  .dash-block .q{font-size:.85rem; color:var(--muted); margin-bottom:18px}
+  .dash-note{font-size:.76rem; color:var(--muted); margin-top:14px; line-height:1.55}
+
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px}
+  .chip{background:none; border:1px solid var(--line); padding:6px 12px; cursor:pointer; border-radius:2px;
+    font-family:inherit; font-size:.72rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted)}
+  .chip:hover{border-color:var(--ink); color:var(--ink)}
+  .chip.on{background:var(--ink); border-color:var(--ink); color:#FAFAF7}
+
+  .hbar-row{display:grid; grid-template-columns:150px 1fr 64px; align-items:center; gap:12px; margin-bottom:9px; font-size:.84rem}
+  .hbar-track{height:14px; background:#EEEEE7; position:relative}
+  .hbar-fill{height:100%; width:0; transition:width .7s cubic-bezier(.65,0,.35,1)}
+  .hbar-val{text-align:right; font-variant-numeric:tabular-nums; font-weight:600}
+  .hbar-row.best .hbar-name{font-weight:700}
+  @media(max-width:560px){.hbar-row{grid-template-columns:100px 1fr 54px}}
+
+  .legend{display:flex; flex-wrap:wrap; gap:16px; font-size:.76rem; color:var(--muted); margin-bottom:14px}
+  .legend i{display:inline-block; width:12px; height:12px; margin-right:6px; vertical-align:-1px}
+
+  .slider-wrap{display:flex; align-items:center; gap:16px; margin:6px 0 20px; flex-wrap:wrap}
+  .slider-wrap input[type=range]{flex:1; min-width:200px; accent-color:var(--accent)}
+  .slider-val{font-family:'Anton',Impact,sans-serif; font-size:2rem; min-width:90px}
+  .svg-chart{width:100%; height:auto; display:block}
+  .svg-chart text{font-family:'Be Vietnam Pro',sans-serif; font-size:11px; fill:#6B6B62}
+
+  .dash-table{width:100%; border-collapse:collapse; font-size:.84rem; margin-top:14px}
+  .dash-table th{text-align:left; font-size:.68rem; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);
+    border-bottom:1px solid var(--ink); padding:8px 10px 8px 0}
+  .dash-table td{border-bottom:1px solid var(--line); padding:9px 10px 9px 0; font-variant-numeric:tabular-nums}
+  .dash-empty{font-size:.86rem; color:var(--muted); padding:8px 0}
+
+  .footer-spacer{height:0}
   footer{border-top:1px solid var(--line); margin-top:70px; padding-top:20px; font-size:.76rem; color:var(--muted)}
 </style>
 </head>
@@ -181,6 +227,7 @@
 
   <nav class="tabs">
     <button class="tab-btn active" data-tab="verify">Xác thực</button>
+    <button class="tab-btn" data-tab="dashboard">Dashboard</button>
     <button class="tab-btn" data-tab="about">Giới thiệu &amp; số liệu</button>
   </nav>
 
@@ -230,6 +277,61 @@
     </div>
   </div>
 
+  <div class="panel" id="panel-dashboard">
+    <div id="dashLoading" class="dash-empty">Đang tải số liệu…</div>
+    <div id="dashContent" style="display:none">
+
+      <p class="eyebrow">Tổng quan · mô hình đang dùng để ra quyết định</p>
+      <div class="kpis" id="kpis"></div>
+
+      <div class="dash-block" id="blkCompare">
+        <h3>So sánh bốn mô hình</h3>
+        <p class="q">Mô hình nào tốt hơn? Kết quả trên tập kiểm thử CEDAR, ngưỡng theo EER.</p>
+        <div class="chips" id="chipsMetric"></div>
+        <div id="barsCompare"></div>
+        <p class="dash-note" id="noteCompare"></p>
+      </div>
+
+      <div class="dash-block" id="blkThreshold">
+        <h3>So sánh tại cùng mức FAR</h3>
+        <p class="q">Khi các mô hình được đặt về cùng một tỷ lệ chấp nhận nhầm chữ ký giả, mô hình nào từ chối nhầm chữ ký thật ít hơn?</p>
+        <div class="slider-wrap">
+          <span class="eyebrow" style="margin:0">Mức FAR</span>
+          <input type="range" id="farSlider" min="1" max="30" step="0.5" value="10">
+          <span class="slider-val" id="farVal">10%</span>
+        </div>
+        <div class="legend" id="legendRoc"></div>
+        <div id="rocChart"></div>
+        <table class="dash-table" id="tblThreshold"></table>
+        <p class="dash-note" id="noteThreshold"></p>
+      </div>
+
+      <div class="dash-block" id="blkPairtype">
+        <h3>Theo loại giả mạo</h3>
+        <p class="q">Hệ thống yếu ở loại giả mạo nào?</p>
+        <div class="legend"><span><i style="background:#8A2E23"></i>Giả có kỹ năng</span><span><i style="background:#B9B9AE"></i>Giả ngẫu nhiên</span></div>
+        <div id="barsPairtype"></div>
+        <p class="dash-note">FAR là tỷ lệ chữ ký giả bị chấp nhận nhầm, càng thấp càng tốt.</p>
+      </div>
+
+      <div class="dash-block" id="blkWriter">
+        <h3>Theo từng người ký</h3>
+        <p class="q">Lỗi có tập trung vào một vài người ký không? Sắp xếp theo FAR giảm dần.</p>
+        <div class="chips" id="chipsWriter"></div>
+        <div class="legend"><span><i style="background:#8A2E23"></i>FAR</span><span><i style="background:#4A5D46"></i>FRR</span></div>
+        <div id="barsWriter"></div>
+      </div>
+
+      <div class="dash-block" id="blkIcdar">
+        <h3>Khả năng tổng quát hóa</h3>
+        <p class="q">Mô hình huấn luyện trên CEDAR hoạt động thế nào trên bộ ICDAR SigComp 2011?</p>
+        <div class="legend"><span><i style="background:#14140F"></i>CEDAR</span><span><i style="background:#4A5D46"></i>ICDAR</span></div>
+        <div id="barsIcdar"></div>
+        <p class="dash-note">Mô hình và ngưỡng giữ nguyên từ CEDAR, không huấn luyện hay điều chỉnh lại trên ICDAR.</p>
+      </div>
+    </div>
+  </div>
+
   <div class="panel" id="panel-about">
 
     <section style="padding-top:0">
@@ -253,9 +355,9 @@
         </div>
         <div class="fact">
           <div class="idx">03</div>
-          <h3>Ngưỡng theo rủi ro</h3>
-          <p>Ngưỡng quyết định chọn trên tập validation và cố định trước khi đánh giá, có thể hiệu
-            chỉnh theo mức FAR mà tổ chức chấp nhận.</p>
+          <h3>Ngưỡng theo operating point</h3>
+          <p>Ngưỡng quyết định chọn trên tập validation và cố định trước khi đánh giá, theo EER hoặc
+            theo một mức FAR mục tiêu.</p>
         </div>
         <div class="fact">
           <div class="idx">04</div>
@@ -415,6 +517,182 @@
     document.getElementById('results').classList.add('on');
     document.getElementById('results').scrollIntoView({behavior:'smooth',block:'start'});
   }
+
+  /* ================= DASHBOARD ================= */
+  const MNAME={rf:'Random Forest',svm:'SVM',siamese:'Siamese Network',combined:'Mô hình kết hợp'};
+  const MCOLOR={rf:'#B9B9AE',svm:'#8C8C82',siamese:'#4A5D46',combined:'#14140F'};
+  const MORDER=['rf','svm','siamese','combined'];
+  let DASH=null, dashLoaded=false;
+
+  const pct=(x,d=1)=>(x==null||isNaN(x))?'–':(x*100).toFixed(d).replace('.',',')+'%';
+  const num=(x,d=3)=>(x==null||isNaN(x))?'–':x.toFixed(d).replace('.',',');
+
+  function hbars(el,items,opts={}){
+    // items: [{label,value,color,best,text}]
+    const max=opts.max!=null?opts.max:Math.max(...items.map(i=>i.value||0),0.0001);
+    el.innerHTML=items.map(i=>
+      '<div class="hbar-row'+(i.best?' best':'')+'"><div class="hbar-name">'+i.label+'</div>'+
+      '<div class="hbar-track"><div class="hbar-fill" data-w="'+Math.max(0,(i.value||0)/max*100)+'" style="background:'+i.color+'"></div></div>'+
+      '<div class="hbar-val">'+(i.text!=null?i.text:num(i.value))+'</div></div>').join('');
+    requestAnimationFrame(()=>setTimeout(()=>el.querySelectorAll('.hbar-fill').forEach(f=>f.style.width=f.dataset.w+'%'),30));
+  }
+
+  function hide(id){const e=document.getElementById(id); if(e) e.style.display='none';}
+
+  function loadDashboard(){
+    if(dashLoaded) return; dashLoaded=true;
+    fetch('/api/dashboard').then(r=>r.json()).then(d=>{DASH=d; renderDashboard();})
+      .catch(()=>{document.getElementById('dashLoading').textContent='Không tải được số liệu. Kiểm tra máy chủ.';});
+  }
+
+  function renderDashboard(){
+    document.getElementById('dashLoading').style.display='none';
+    document.getElementById('dashContent').style.display='block';
+    renderKpis(); renderCompare(); renderThreshold(); renderPairtype(); renderWriter(); renderIcdar();
+  }
+
+  function renderKpis(){
+    const m=DASH.decision_model||'combined';
+    const cmp=(DASH.comparison||[]).find(r=>r.model===m)||{};
+    const opt=(DASH.accuracy_optimized||[]).find(r=>r.model===m);
+    const acc=opt?opt.accuracy_test:cmp.accuracy, far=opt?opt.FAR_test:cmp.FAR, frr=opt?opt.FRR_test:cmp.FRR;
+    const sub=opt?'ngưỡng tối ưu accuracy':'ngưỡng EER';
+    document.getElementById('kpis').innerHTML=
+      '<div class="kpi dark"><div class="k-label">Mô hình</div><div class="k-val">'+(MNAME[m]||m)+'</div><div class="k-sub">'+sub+'</div></div>'+
+      '<div class="kpi"><div class="k-label">Accuracy</div><div class="k-val">'+pct(acc)+'</div><div class="k-sub">tập kiểm thử</div></div>'+
+      '<div class="kpi"><div class="k-label">ROC-AUC</div><div class="k-val">'+num(cmp.roc_auc)+'</div><div class="k-sub">không phụ thuộc ngưỡng</div></div>'+
+      '<div class="kpi"><div class="k-label">FAR</div><div class="k-val">'+pct(far)+'</div><div class="k-sub">giả bị chấp nhận nhầm</div></div>'+
+      '<div class="kpi"><div class="k-label">FRR</div><div class="k-val">'+pct(frr)+'</div><div class="k-sub">thật bị từ chối nhầm</div></div>';
+  }
+
+  const METRICS=[['accuracy','Accuracy',true],['roc_auc','ROC-AUC',true],['f1','F1',true],['FAR','FAR',false],['FRR','FRR',false]];
+  let curMetric='roc_auc';
+  function renderCompare(){
+    const rows=DASH.comparison||[];
+    if(!rows.length){hide('blkCompare');return;}
+    const chips=document.getElementById('chipsMetric');
+    chips.innerHTML=METRICS.filter(([k])=>k in rows[0]).map(([k,l])=>'<button class="chip'+(k===curMetric?' on':'')+'" data-k="'+k+'">'+l+'</button>').join('');
+    chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{curMetric=c.dataset.k;renderCompare();});
+    const higher=METRICS.find(m=>m[0]===curMetric)[2];
+    const vals=MORDER.map(m=>rows.find(r=>r.model===m)).filter(Boolean);
+    const best=higher?Math.max(...vals.map(r=>r[curMetric])):Math.min(...vals.map(r=>r[curMetric]));
+    hbars(document.getElementById('barsCompare'), vals.map(r=>({
+      label:MNAME[r.model], value:r[curMetric], color:MCOLOR[r.model], best:r[curMetric]===best,
+      text:(curMetric==='FAR'||curMetric==='FRR'||curMetric==='accuracy')?pct(r[curMetric]):num(r[curMetric])
+    })), {max:(curMetric==='FAR'||curMetric==='FRR')?Math.max(...vals.map(r=>r[curMetric]))*1.1:1});
+    document.getElementById('noteCompare').textContent=higher?
+      'Chỉ số càng cao càng tốt. Tên in đậm là mô hình tốt nhất.':
+      'Chỉ số càng thấp càng tốt. Lưu ý mỗi mô hình có ngưỡng EER riêng nên FAR và FRR ở đây chưa so sánh trực tiếp được với nhau — xem khối "So sánh tại cùng mức FAR" bên dưới.';
+  }
+
+  // ---- Duong cong FAR-FRR: uu tien roc_curves_test.csv, khong co thi dung 4 diem target FAR ----
+  function curves(){
+    const c={};
+    if((DASH.roc||[]).length){
+      DASH.roc.forEach(r=>{(c[r.model]=c[r.model]||[]).push([r.FAR,r.FRR]);});
+    }else if((DASH.target_far||[]).length){
+      DASH.target_far.forEach(r=>{(c[r.model]=c[r.model]||[]).push([r.FAR_test,r.FRR_test]);});
+    }
+    Object.values(c).forEach(a=>a.sort((x,y)=>x[0]-y[0]));
+    return c;
+  }
+  function interp(x,pts){
+    if(!pts.length) return NaN;
+    if(x<=pts[0][0]) return pts[0][1];
+    if(x>=pts[pts.length-1][0]) return pts[pts.length-1][1];
+    for(let i=1;i<pts.length;i++){
+      if(x<=pts[i][0]){const [x0,y0]=pts[i-1],[x1,y1]=pts[i];return x1===x0?y1:y0+(y1-y0)*(x-x0)/(x1-x0);}
+    }
+    return NaN;
+  }
+
+  function renderThreshold(){
+    const C=curves();
+    if(!Object.keys(C).length){hide('blkThreshold');return;}
+    const detailed=(DASH.roc||[]).length>0;
+    document.getElementById('legendRoc').innerHTML=MORDER.filter(m=>C[m]).map(m=>'<span><i style="background:'+MCOLOR[m]+'"></i>'+MNAME[m]+'</span>').join('');
+    const slider=document.getElementById('farSlider');
+    const draw=()=>{
+      const x=parseFloat(slider.value)/100;
+      document.getElementById('farVal').textContent=slider.value.replace('.',',')+'%';
+      drawRoc(C,x);
+      const rows=MORDER.filter(m=>C[m]).map(m=>({m,frr:interp(x,C[m])}));
+      const best=Math.min(...rows.map(r=>r.frr));
+      document.getElementById('tblThreshold').innerHTML=
+        '<thead><tr><th>Mô hình</th><th>FRR tại mức này</th><th>Chữ ký thật bị từ chối trên 1.000 giao dịch</th></tr></thead><tbody>'+
+        rows.map(r=>'<tr><td'+(r.frr===best?' style="font-weight:700"':'')+'>'+MNAME[r.m]+'</td><td>'+pct(r.frr)+'</td><td>'+Math.round(r.frr*1000)+'</td></tr>').join('')+'</tbody>';
+    };
+    slider.oninput=draw; draw();
+    document.getElementById('noteThreshold').textContent=detailed?
+      'Đường cong tính trên tập kiểm thử CEDAR. Mô hình có đường nằm thấp hơn là mô hình ít từ chối nhầm chữ ký thật hơn ở cùng mức rủi ro.':
+      'Đang dùng 4 điểm FAR mục tiêu 5%, 10%, 15%, 20% và nội suy tuyến tính giữa các điểm. Chạy lại 10_threshold_analysis.py để có đường cong chi tiết.';
+  }
+
+  function drawRoc(C,xMark){
+    const W=620,H=300,L=64,R=14,T=14,B=38,XMAX=0.30;
+    const sx=v=>L+(Math.min(v,XMAX)/XMAX)*(W-L-R), sy=v=>T+(1-v)*(H-T-B);
+    let g='';
+    for(let y=0;y<=1.0001;y+=0.25){g+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+sy(y)+'" y2="'+sy(y)+'" stroke="#E3E4DB"/>'+
+      '<text x="'+(L-8)+'" y="'+(sy(y)+4)+'" text-anchor="end">'+Math.round(y*100)+'%</text>';}
+    for(let x=0;x<=XMAX+1e-9;x+=0.05){g+='<text x="'+sx(x)+'" y="'+(H-B+18)+'" text-anchor="middle">'+Math.round(x*100)+'%</text>';}
+    g+='<text x="'+((L+W-R)/2)+'" y="'+(H-4)+'" text-anchor="middle">FAR — tỷ lệ chữ ký giả bị chấp nhận</text>';
+    g+='<text x="10" y="'+((T+H-B)/2)+'" text-anchor="middle" transform="rotate(-90 10 '+((T+H-B)/2)+')">FRR</text>';
+    MORDER.filter(m=>C[m]).forEach(m=>{
+      const pts=C[m].filter(p=>p[0]<=XMAX+1e-9).map(p=>sx(p[0]).toFixed(1)+','+sy(p[1]).toFixed(1)).join(' ');
+      g+='<polyline fill="none" stroke="'+MCOLOR[m]+'" stroke-width="'+(m==='combined'?2.6:1.8)+'" points="'+pts+'"/>';
+      const y=interp(xMark,C[m]);
+      g+='<circle cx="'+sx(xMark)+'" cy="'+sy(y)+'" r="4" fill="'+MCOLOR[m]+'"/>';
+    });
+    g+='<line x1="'+sx(xMark)+'" x2="'+sx(xMark)+'" y1="'+T+'" y2="'+(H-B)+'" stroke="#A61B1B" stroke-dasharray="4 4"/>';
+    document.getElementById('rocChart').innerHTML='<svg class="svg-chart" viewBox="0 0 '+W+' '+H+'">'+g+'</svg>';
+  }
+
+  function renderPairtype(){
+    const rows=DASH.pairtype||[];
+    if(!rows.length){hide('blkPairtype');return;}
+    const get=(m,t,col)=>{const r=rows.find(x=>x.model===m&&x.pair_type===t);return r?r[col]:null;};
+    const items=[];
+    MORDER.forEach(m=>{
+      const sk=get(m,'skilled_forgery','FAR'), rd=get(m,'random_forgery','FAR');
+      if(sk==null&&rd==null) return;
+      items.push({label:MNAME[m],value:sk,color:'#8A2E23',text:pct(sk)});
+      items.push({label:'',value:rd,color:'#B9B9AE',text:pct(rd)});
+    });
+    hbars(document.getElementById('barsPairtype'),items,{max:Math.max(...items.map(i=>i.value||0))*1.1});
+  }
+
+  let curWriterModel=null;
+  function renderWriter(){
+    const rows=DASH.writer||[];
+    if(!rows.length){hide('blkWriter');return;}
+    const models=MORDER.filter(m=>rows.some(r=>r.model===m));
+    if(!curWriterModel) curWriterModel=models.includes(DASH.decision_model)?DASH.decision_model:models[models.length-1];
+    const chips=document.getElementById('chipsWriter');
+    chips.innerHTML=models.map(m=>'<button class="chip'+(m===curWriterModel?' on':'')+'" data-m="'+m+'">'+MNAME[m]+'</button>').join('');
+    chips.querySelectorAll('.chip').forEach(c=>c.onclick=()=>{curWriterModel=c.dataset.m;renderWriter();});
+    const sub=rows.filter(r=>r.model===curWriterModel).sort((a,b)=>b.FAR-a.FAR);
+    const items=[];
+    sub.forEach(r=>{
+      items.push({label:'Người ký '+r.writer_id,value:r.FAR,color:'#8A2E23',text:pct(r.FAR)});
+      items.push({label:'',value:r.FRR,color:'#4A5D46',text:pct(r.FRR)});
+    });
+    hbars(document.getElementById('barsWriter'),items,{max:Math.max(...items.map(i=>i.value||0),0.01)*1.1});
+  }
+
+  function renderIcdar(){
+    const rows=DASH.icdar||[];
+    if(!rows.length){hide('blkIcdar');return;}
+    const items=[];
+    MORDER.forEach(m=>{
+      const r=rows.find(x=>x.model===m); if(!r) return;
+      items.push({label:MNAME[m],value:r.cedar_accuracy,color:'#14140F',text:pct(r.cedar_accuracy)});
+      const d=(r.cedar_accuracy!=null)?((r.accuracy-r.cedar_accuracy)*100).toFixed(1).replace('.',','):null;
+      items.push({label:d!=null?('thay đổi '+(d>0?'+':'')+d):'',value:r.accuracy,color:'#4A5D46',text:pct(r.accuracy)});
+    });
+    hbars(document.getElementById('barsIcdar'),items,{max:1});
+  }
+
+  document.querySelector('.tab-btn[data-tab="dashboard"]').addEventListener('click',loadDashboard);
 </script>
 </body>
 </html>

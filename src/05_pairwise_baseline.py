@@ -268,6 +268,9 @@ def main():
     parser.add_argument("--model_dir", default=str(DEFAULT_MODEL_DIR))
     parser.add_argument("--tables_dir", default=str(DEFAULT_TABLES_DIR))
     parser.add_argument("--figures_dir", default=str(DEFAULT_FIGURES_DIR))
+    parser.add_argument("--fixed_params", action="store_true",
+                        help="Dung co dinh tham so da chon o lan chia chinh (RF 200 cay do sau 10, "
+                             "SVM RBF C=10), khong do tim lai. Dung khi danh gia nhieu cach chia.")
     args = parser.parse_args()
 
     features_df = pd.read_csv(args.features)
@@ -303,6 +306,8 @@ def main():
         {"n_estimators": 200, "max_depth": 10},
         {"n_estimators": 400, "max_depth": 20},
     ]
+    if args.fixed_params:
+        rf_grid = [{"n_estimators": 200, "max_depth": 10}]
     best_rf, best_rf_params, _ = train_and_select_best("rf", rf_grid, X_train, y_train, X_val, y_val)
 
     print("\n=== Huan luyen SVM (chon hyperparameter tren VAL) ===")
@@ -311,6 +316,8 @@ def main():
         {"C": 10, "kernel": "rbf", "gamma": "scale"},
         {"C": 1, "kernel": "linear"},
     ]
+    if args.fixed_params:
+        svm_grid = [{"C": 10, "kernel": "rbf", "gamma": "scale"}]
     best_svm, best_svm_params, _ = train_and_select_best("svm", svm_grid, X_train, y_train, X_val, y_val)
 
     # -----------------------------------------------------------------

@@ -204,6 +204,8 @@ def main():
     parser.add_argument("--model_dir", default=str(DEFAULT_MODEL_DIR))
     parser.add_argument("--tables_dir", default=str(DEFAULT_TABLES_DIR))
     parser.add_argument("--figures_dir", default=str(DEFAULT_FIGURES_DIR))
+    parser.add_argument("--fixed_params", action="store_true",
+                        help="Dung co dinh RF 400 cay do sau 20 da chon o lan chia chinh.")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -264,6 +266,8 @@ def main():
         {"n_estimators": 200, "max_depth": 10},
         {"n_estimators": 400, "max_depth": 20},
     ]
+    if args.fixed_params:
+        param_grid = [{"n_estimators": 400, "max_depth": 20}]
     best_model, best_eer, best_params = None, np.inf, None
     for params in param_grid:
         model = RandomForestClassifier(random_state=RANDOM_SEED, n_jobs=-1, **params)

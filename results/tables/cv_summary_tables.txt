@@ -1,0 +1,29 @@
+Bang: Ket qua trung binh ± do lech chuan qua 5 cach chia nguoi ky
+| Mô hình | Accuracy (%) | ROC-AUC | EER (%) | FAR giả có kỹ năng (%) | FAR giả ngẫu nhiên (%) |
+|---|---|---|---|---|---|
+| Random Forest | 77,8 ± 2,8 | 0,862 ± 0,030 | 21,7 ± 3,1 | 34,8 ± 5,9 | 4,1 ± 1,1 |
+| SVM | 77,4 ± 2,4 | 0,857 ± 0,026 | 22,2 ± 2,6 | 36,8 ± 6,2 | 4,7 ± 1,0 |
+| Siamese Network | 79,5 ± 1,3 | 0,882 ± 0,015 | 20,1 ± 1,5 | 26,8 ± 7,1 | 2,8 ± 2,4 |
+| Mô hình kết hợp | 79,4 ± 2,0 | 0,878 ± 0,025 | 20,2 ± 2,1 | 28,2 ± 6,1 | 3,0 ± 2,5 |
+
+Bang: FRR (%) tai FAR muc tieu, nguong chon tren validation, trung binh ± do lech chuan qua 5 cach chia
+| FAR mục tiêu | Random Forest | SVM | Siamese Network | Mô hình kết hợp |
+|---|---|---|---|---|
+| 5% | 56,7 ± 9,3 | 58,0 ± 9,8 | 48,7 ± 9,8 | 44,4 ± 9,7 |
+| 10% | 38,2 ± 10,5 | 37,8 ± 10,3 | 32,9 ± 7,2 | 30,1 ± 6,2 |
+| 15% | 27,2 ± 9,4 | 27,1 ± 9,1 | 23,9 ± 5,1 | 22,7 ± 4,7 |
+| 20% | 20,5 ± 8,2 | 20,1 ± 7,4 | 17,9 ± 5,2 | 16,8 ± 3,5 |
+
+Bang: FAR thuc te (%) tren tap kiem thu tai FAR muc tieu, trung binh ± do lech chuan
+| FAR mục tiêu | Random Forest | SVM | Siamese Network | Mô hình kết hợp |
+|---|---|---|---|---|
+| 5% | 6,6 ± 2,3 | 6,7 ± 2,6 | 6,7 ± 1,8 | 7,3 ± 1,4 |
+| 10% | 13,2 ± 4,3 | 13,4 ± 5,0 | 11,9 ± 2,3 | 13,3 ± 2,1 |
+| 15% | 19,0 ± 5,3 | 19,6 ± 5,7 | 17,2 ± 1,8 | 18,4 ± 2,6 |
+| 20% | 24,0 ± 6,3 | 24,3 ± 5,5 | 22,4 ± 2,1 | 23,9 ± 2,8 |
+
+So lan chia ma moi mo hinh co FRR thap nhat tai tung FAR muc tieu:
+  FAR 5%: Random Forest 1/5, Siamese Network 1/5, Mô hình kết hợp 3/5
+  FAR 10%: SVM 2/5, Siamese Network 1/5, Mô hình kết hợp 2/5
+  FAR 15%: Random Forest 1/5, SVM 1/5, Siamese Network 1/5, Mô hình kết hợp 2/5
+  FAR 20%: Random Forest 1/5, SVM 1/5, Siamese Network 1/5, Mô hình kết hợp 2/5

@@ -1,127 +1,259 @@
 """
-recompute_combined_threshold.py
----------------------------------
-Tinh lai threshold cho model Combined theo MUC FAR MUC TIEU (vd 10%) thay
-vi threshold EER mac dinh - giup Combined "khong tin de" nhu hien tai.
+10_threshold_analysis.py
+--------------------------
+So sanh 4 model (RF, SVM, Siamese ensemble, Combined) TAI CUNG MOT MUC
+FAR MUC TIEU co dinh (vd 5%, 10%, 15%, 20%) - thay vi so sanh tai
+threshold EER rieng cua tung model nhu cac buoc truoc.
 
-VI SAO CAN SCRIPT NAY:
-    App demo dang dung threshold EER (can bang FAR~FRR) cho Combined,
-    duoc luu trong model_artifacts/combined_threshold.json tu luc chay
-    08_combined_model.py. Nhung 10_threshold_analysis.py da chung minh:
-    Combined thang ro nhat o CAC MUC FAR THAP (5-10%) - tuc la neu chon
-    threshold nghiem ngat hon (FAR muc tieu thap hon EER), Combined se
-    "kho tin" hon, giam FAR, van giu FRR tot hon RF/SVM/Siamese o cung
-    muc do.
+TAI SAO CAN PHAN TICH NAY (tra loi cau hoi "sao chon duoc deep learning
+neu FAR cua no cao hon RF?"):
+    ROC-AUC do kha nang phan biet TREN TOAN BO duong cong ROC, nhung
+    threshold EER (can bang FAR~FRR) chi la MOT DIEM CU THE tren duong
+    cong do. Ngan hang thuc te KHONG van hanh theo EER - ho dat ra MOT
+    MUC FAR TOI DA CHAP NHAN DUOC (vd "khong duoc qua 10% chu ky gia
+    lot qua"), roi xem FRR o muc do la bao nhieu. Day moi la cach so
+    sanh dung voi quyet dinh thuc te.
 
-Script nay tinh lai threshold tren VAL (dung nguyen tac cu, khong dung
-test) cho MOT MUC FAR MUC TIEU cu the, ghi de vao combined_threshold.json
-(sao luu ban cu truoc khi ghi de).
+    Neu Siamese co ROC-AUC cao hon RF, VE MAT LY THUYET, tai BAT KY
+    muc FAR co dinh nao, Siamese CO THE co FRR thap hon RF - du
+    threshold EER mac dinh cua Siamese dang cho FAR cao hon RF. Script
+    nay kiem tra TRUC TIEP gia thuyet do bang du lieu that, thay vi chi
+    suy luan ly thuyet.
 
-Cach dung:
+QUAN TRONG VE PHUONG PHAP LUAN: threshold cho tung muc FAR muc tieu
+duoc CHON TREN VAL (khong phai test), giong het nguyen tac EER truoc
+do - tranh data leakage. Test set van chi danh gia 1 lan cho moi cau
+hinh threshold.
+
+YEU CAU: da chay xong 05, 06, 08 truoc do.
+
+Cach dung (khong can tham so, path da khop san):
     cd src
-    python recompute_combined_threshold.py --target_far 0.10
+    python 10_threshold_analysis.py
 
-Sau khi chay xong, KHOI DONG LAI app.py / backend de no doc threshold moi.
+Output:
+    results/tables/threshold_analysis_target_far.csv
+    results/figures/threshold_analysis_frr_vs_far.png
 """
 
 import argparse
 import importlib.util
 import json
-import shutil
 from pathlib import Path
 
 import joblib
 import numpy as np
 import pandas as pd
+import torch
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SRC_DIR.parent
-MODEL_DIR = PROJECT_ROOT / "model_artifacts"
-PAIRS_DIR = PROJECT_ROOT / "data" / "processed" / "pairs"
-FEATURES_PATH = PROJECT_ROOT / "data" / "processed" / "features.csv"
+DEFAULT_FEATURES = PROJECT_ROOT / "data" / "processed" / "features.csv"
+DEFAULT_PAIRS_DIR = PROJECT_ROOT / "data" / "processed" / "pairs"
+DEFAULT_MODEL_DIR = PROJECT_ROOT / "model_artifacts"
+DEFAULT_TABLES_DIR = PROJECT_ROOT / "results" / "tables"
+DEFAULT_FIGURES_DIR = PROJECT_ROOT / "results" / "figures"
+
+TARGET_FAR_LEVELS = [0.05, 0.10, 0.15, 0.20]  # cac operating point de so sanh
 
 
-def load_module(filename, module_name):
+def load_module(filename: str, module_name: str):
     spec = importlib.util.spec_from_file_location(module_name, SRC_DIR / filename)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
+siamese_mod = load_module("06_siamese_network.py", "siamese_mod_thresh")
+combined_mod = load_module("08_combined_model.py", "combined_mod_thresh")
+SELECTED_FEATURES = siamese_mod.SELECTED_FEATURES
+
+
 def find_threshold_at_target_far(y_true_val, scores_val, target_far):
-    """Tim threshold tren VAL sao cho FAR gan nhat voi target_far (khong vuot qua)."""
-    fpr, tpr, thresholds = roc_curve(y_true_val, scores_val)
+    """
+    Tim threshold TREN VAL sao cho FAR dat GAN NHAT voi target_far (khong
+    vuot qua, uu tien an toan hon cho ngan hang - tuc FAR thuc te <= target).
+    """
+    fpr, tpr, thresholds = roc_curve(y_true_val, scores_val)  # fpr = FAR
+    # Loc cac diem co FAR <= target, chon diem co FAR GAN target nhat (FRR thap nhat trong so do)
     valid_idx = np.where(fpr <= target_far)[0]
     if len(valid_idx) == 0:
+        # Khong co threshold nao dat FAR <= target (hiem), lay diem FAR nho nhat co the
         idx = np.argmin(fpr)
     else:
-        idx = valid_idx[np.argmax(fpr[valid_idx])]
-    return thresholds[idx], fpr[idx], 1 - tpr[idx]
+        idx = valid_idx[np.argmax(fpr[valid_idx])]  # FAR gan target nhat tu duoi len
+    return thresholds[idx], fpr[idx], 1 - tpr[idx]  # threshold, FAR dat duoc, FRR tuong ung
+
+
+def compute_far_frr_accuracy(y_true, y_pred):
+    tp = int(np.sum((y_true == 1) & (y_pred == 1)))
+    tn = int(np.sum((y_true == 0) & (y_pred == 0)))
+    fp = int(np.sum((y_true == 0) & (y_pred == 1)))
+    fn = int(np.sum((y_true == 1) & (y_pred == 0)))
+    far = fp / (fp + tn) if (fp + tn) > 0 else np.nan
+    frr = fn / (fn + tp) if (fn + tp) > 0 else np.nan
+    accuracy = (tp + tn) / len(y_true)
+    return far, frr, accuracy
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--target_far", type=float, default=0.10,
-                         help="Muc FAR muc tieu cho Combined (mac dinh 0.10 = 10%%)")
+    parser = argparse.ArgumentParser(description="So sanh model tai cung muc FAR muc tieu")
+    parser.add_argument("--features", default=str(DEFAULT_FEATURES))
+    parser.add_argument("--pairs_dir", default=str(DEFAULT_PAIRS_DIR))
+    parser.add_argument("--model_dir", default=str(DEFAULT_MODEL_DIR))
+    parser.add_argument("--tables_dir", default=str(DEFAULT_TABLES_DIR))
+    parser.add_argument("--figures_dir", default=str(DEFAULT_FIGURES_DIR))
     args = parser.parse_args()
 
-    import torch
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_dir = Path(args.model_dir)
+    features_df = pd.read_csv(args.features)
+    pairs_dir = Path(args.pairs_dir)
+    pairs_val = pd.read_csv(pairs_dir / "pairs_val.csv")
+    pairs_test = pd.read_csv(pairs_dir / "pairs_test.csv")
 
-    siamese_mod = load_module("06_siamese_network.py", "siamese_mod_recompute")
-    combined_mod = load_module("08_combined_model.py", "combined_mod_recompute")
-    SELECTED_FEATURES = siamese_mod.SELECTED_FEATURES
-
-    print("Dang load model Siamese ensemble va Combined...")
-    siamese_models, embedding_dim = combined_mod.load_siamese_ensemble(MODEL_DIR, device)
-    combined_rf = joblib.load(MODEL_DIR / "combined_rf.joblib")
-    combined_scaler = joblib.load(MODEL_DIR / "combined_scaler.joblib")
-    combined_imputer = joblib.load(MODEL_DIR / "combined_imputer.joblib")
-
-    features_df = pd.read_csv(FEATURES_PATH)
-    pairs_val = pd.read_csv(PAIRS_DIR / "pairs_val.csv")
-
-    print(f"Dang tinh dac trung ket hop tren VAL ({len(pairs_val)} pairs)...")
+    # ----- Chuan bi dac trung classical (dung chung cho RF/SVM/Combined) -----
     val_classical, classical_cols = combined_mod.compute_classical_deltas(pairs_val, features_df, SELECTED_FEATURES)
+    test_classical, _ = combined_mod.compute_classical_deltas(pairs_test, features_df, SELECTED_FEATURES)
+    y_val = val_classical["label"].values
+    y_test = test_classical["label"].values
+
+    # ----- Load RF/SVM -----
+    rf = joblib.load(model_dir / "pairwise_rf.joblib")
+    svm = joblib.load(model_dir / "pairwise_svm.joblib")
+    pw_scaler = joblib.load(model_dir / "pairwise_scaler.joblib")
+    pw_imputer = joblib.load(model_dir / "pairwise_imputer.joblib")
+    X_val_classical = pw_scaler.transform(pw_imputer.transform(val_classical[classical_cols].values))
+    X_test_classical = pw_scaler.transform(pw_imputer.transform(test_classical[classical_cols].values))
+    rf_scores_val = rf.predict_proba(X_val_classical)[:, 1]
+    rf_scores_test = rf.predict_proba(X_test_classical)[:, 1]
+    svm_scores_val = svm.decision_function(X_val_classical)
+    svm_scores_test = svm.decision_function(X_test_classical)
+
+    # ----- Load Siamese ensemble -----
+    siamese_models, embedding_dim = combined_mod.load_siamese_ensemble(model_dir, device)
+    print(f"Da load {len(siamese_models)} model Siamese.")
+
+    def siamese_scores(pairs_df):
+        _, scores = siamese_mod.compute_ensemble_scores(
+            siamese_models,
+            torch.utils.data.DataLoader(siamese_mod.SignaturePairDataset(pairs_df, augment=False), batch_size=32, shuffle=False),
+            device,
+        )
+        return scores
+
+    siamese_scores_val = siamese_scores(pairs_val)
+    siamese_scores_test = siamese_scores(pairs_test)
+
+    # ----- Load Combined model -----
+    combined_rf = joblib.load(model_dir / "combined_rf.joblib")
+    combined_scaler = joblib.load(model_dir / "combined_scaler.joblib")
+    combined_imputer = joblib.load(model_dir / "combined_imputer.joblib")
+
+    print("Dang tinh embedding delta cho model Combined (VAL)...")
     val_emb_deltas = combined_mod.compute_embedding_deltas(pairs_val, siamese_models, device)
+    print("Dang tinh embedding delta cho model Combined (TEST)...")
+    test_emb_deltas = combined_mod.compute_embedding_deltas(pairs_test, siamese_models, device)
 
     emb_cols = [f"emb_delta_{i}" for i in range(embedding_dim)]
+    val_combined_df = val_classical.copy()
+    test_combined_df = test_classical.copy()
     for i, col in enumerate(emb_cols):
-        val_classical[col] = val_emb_deltas[:, i]
+        val_combined_df[col] = val_emb_deltas[:, i]
+        test_combined_df[col] = test_emb_deltas[:, i]
     combined_feature_cols = classical_cols + emb_cols
 
-    X_val = combined_scaler.transform(combined_imputer.transform(val_classical[combined_feature_cols].values))
-    y_val = val_classical["label"].values
-    scores_val = combined_rf.predict_proba(X_val)[:, 1]
+    X_val_combined = combined_scaler.transform(combined_imputer.transform(val_combined_df[combined_feature_cols].values))
+    X_test_combined = combined_scaler.transform(combined_imputer.transform(test_combined_df[combined_feature_cols].values))
+    combined_scores_val = combined_rf.predict_proba(X_val_combined)[:, 1]
+    combined_scores_test = combined_rf.predict_proba(X_test_combined)[:, 1]
 
-    old_threshold_path = MODEL_DIR / "combined_threshold.json"
-    with open(old_threshold_path) as f:
-        old_config = json.load(f)
-    old_threshold = old_config["threshold"]
+    # ----- So sanh tai tung muc FAR muc tieu -----
+    models_scores = {
+        "rf": (rf_scores_val, rf_scores_test),
+        "svm": (svm_scores_val, svm_scores_test),
+        "siamese": (siamese_scores_val, siamese_scores_test),
+        "combined": (combined_scores_val, combined_scores_test),
+    }
 
-    new_threshold, achieved_far, achieved_frr = find_threshold_at_target_far(y_val, scores_val, args.target_far)
+    results = []
+    # Xuat duong cong FAR - FRR chi tiet tren tap kiem thu cho dashboard
+    # (thanh truot nguong). Noi suy FRR tai luoi FAR tu 0 den 1, buoc 0,5%.
+    far_grid = np.round(np.arange(0, 1.0001, 0.005), 4)
+    roc_rows = []
+    for model_name, (_sv, scores_test) in models_scores.items():
+        fpr, tpr, _ = roc_curve(y_test, scores_test)
+        frr_grid = np.interp(far_grid, fpr, 1 - tpr)
+        roc_rows += [{"model": model_name, "FAR": f, "FRR": float(r)} for f, r in zip(far_grid, frr_grid)]
+    roc_path = Path(args.tables_dir) / "roc_curves_test.csv"
+    roc_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(roc_rows).to_csv(roc_path, index=False)
+    print(f"Da luu duong cong FAR-FRR cho dashboard: {roc_path}")
 
-    print(f"\nThreshold CU (EER):                {old_threshold:.4f}")
-    print(f"Threshold MOI (FAR muc tieu={args.target_far:.0%}): {new_threshold:.4f}")
-    print(f"  -> FAR dat duoc tren VAL: {achieved_far:.4f}")
-    print(f"  -> FRR dat duoc tren VAL: {achieved_frr:.4f}")
+    # EER va ROC-AUC tren tap kiem thu - dung lam benchmark chuan de so sanh
+    # mo hinh (theo gop y GVHD). EER la chi so mo ta, khong dung de chon nguong.
+    from sklearn.metrics import roc_auc_score
+    eer_rows = []
+    for model_name, (_sv, scores_test) in models_scores.items():
+        fpr, tpr, _ = roc_curve(y_test, scores_test)
+        frr = 1 - tpr
+        i = int(np.argmin(np.abs(fpr - frr)))
+        eer_rows.append({"model": model_name,
+                         "EER_test": float((fpr[i] + frr[i]) / 2),
+                         "ROC_AUC_test": float(roc_auc_score(y_test, scores_test))})
+    eer_df = pd.DataFrame(eer_rows)
+    eer_path = Path(args.tables_dir) / "eer_test.csv"
+    eer_df.to_csv(eer_path, index=False)
+    print(f"\n=== EER tren tap kiem thu ===\n{eer_df.round(4).to_string(index=False)}")
+    print(f"Da luu: {eer_path}")
 
-    # Sao luu ban cu truoc khi ghi de
-    backup_path = MODEL_DIR / "combined_threshold_backup_eer.json"
-    if not backup_path.exists():
-        shutil.copy(old_threshold_path, backup_path)
-        print(f"\nDa sao luu threshold EER cu vao: {backup_path}")
+    for target_far in TARGET_FAR_LEVELS:
+        print(f"\n=== Muc FAR muc tieu: {target_far:.0%} ===")
+        for model_name, (scores_val, scores_test) in models_scores.items():
+            threshold, achieved_far_val, _ = find_threshold_at_target_far(y_val, scores_val, target_far)
+            y_pred_test = (scores_test >= threshold).astype(int)
+            far_test, frr_test, acc_test = compute_far_frr_accuracy(y_test, y_pred_test)
+            results.append({
+                "target_FAR": target_far, "model": model_name,
+                "FAR_val_dat_duoc": achieved_far_val, "threshold": threshold,
+                "FAR_test": far_test, "FRR_test": frr_test, "accuracy_test": acc_test,
+            })
+            print(f"  {model_name:10s} -> FAR(test)={far_test:.4f} | FRR(test)={frr_test:.4f} | acc={acc_test:.4f}")
 
-    old_config["threshold"] = float(new_threshold)
-    old_config["threshold_method"] = f"target_far_{args.target_far}"
-    old_config["threshold_eer_backup"] = float(old_threshold)
-    with open(old_threshold_path, "w") as f:
-        json.dump(old_config, f, indent=2)
+    results_df = pd.DataFrame(results)
+    tables_dir = Path(args.tables_dir)
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    results_path = tables_dir / "threshold_analysis_target_far.csv"
+    results_df.to_csv(results_path, index=False)
+    print(f"\nDa luu: {results_path}")
 
-    print(f"\nDa cap nhat: {old_threshold_path}")
-    print("KHOI DONG LAI app.py / backend de ap dung threshold moi.")
-    print(f"\nDe quay lai threshold EER cu: copy {backup_path.name} de len combined_threshold.json")
+    # ----- Bieu do: FRR vs target FAR, tung model 1 duong -----
+    figures_dir = Path(args.figures_dir)
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    plt.figure(figsize=(7, 5))
+    for model_name in models_scores.keys():
+        sub = results_df[results_df["model"] == model_name].sort_values("target_FAR")
+        plt.plot(sub["target_FAR"], sub["FRR_test"], marker="o", label=model_name.upper())
+    plt.xlabel("Muc FAR muc tieu (ngan hang dat ra)")
+    plt.ylabel("FRR tren test (o muc FAR do)")
+    plt.title("So sanh FRR cua 4 model tai CUNG muc FAR muc tieu")
+    plt.legend()
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    fig_path = figures_dir / "threshold_analysis_frr_vs_far.png"
+    plt.savefig(fig_path, dpi=150)
+    plt.close()
+    print(f"Da luu bieu do: {fig_path}")
+
+    print("\n=== KET LUAN ===")
+    print("Tai CUNG mot muc FAR, mo hinh co FRR THAP HON la mo hinh tot hon o operating")
+    print("point do. Day la cach so sanh cong bang hon so voi so sanh tai nguong EER rieng")
+    print("cua tung mo hinh. Cac muc 5-20% chi la cac operating point de so sanh, khong phai")
+    print("muc rui ro da duoc nghiep vu ngan hang xac nhan.")
 
 
 if __name__ == "__main__":

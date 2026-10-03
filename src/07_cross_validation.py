@@ -1,162 +1,214 @@
 """
 07_cross_validation.py
-------------------------
-Tu dong chay lai toan bo pipeline (01b_generate_pairs -> 05_pairwise_baseline
--> 06_siamese_network) qua NHIEU CACH CHIA WRITER KHAC NHAU (nhieu seed),
-roi tong hop ket qua TRUNG BINH +- DO LECH CHUAN.
+-----------------------
+Kiem tra do on dinh cua ket qua qua NHIEU CACH CHIA NGUOI KY (theo gop y
+GVHD): lap lai toan bo quy trinh tren 5 cach chia signer-disjoint 35/10/10
+voi 5 random seed khac nhau, roi bao cao mean +- SD cua cac chi so chinh.
 
-VI SAO CAN SCRIPT NAY:
-    CEDAR chi co 55 writer (10 writer o tap test). Ket qua danh gia tu
-    MOT lan chia duy nhat co the dao dong dang ke chi vi "may/rui" - tap
-    test lan do gom nhung writer de hay kho hon trung binh. Chay qua
-    nhieu cach chia (seed) khac nhau roi lay trung binh +- std la cach
-    danh gia dung dan va thuyet phuc hon nhieu so voi bao cao 1 con so
-    tu 1 lan chay - va la thuc hanh chuan trong nghien cuu (k-fold /
-    repeated random split evaluation).
+NGUYEN TAC (dung gop y GVHD):
+    - GIU NGUYEN kien truc va tham so da chon o lan chia chinh:
+        RF 200 cay do sau 10, SVM RBF C=10, Siamese Triplet Loss voi margin
+        rieng cho gia co ky nang, ensemble 3 mang, mo hinh ket hop RF 400
+        cay do sau 20, 11 dac trung da chon. KHONG do tim lai tham so.
+    - Moi lan chia chi chon nguong tren validation cua chinh lan chia do.
+    - Muc dich chi la kiem tra ket luan hien tai co on dinh hay khong.
 
-    QUAN TRONG: muc dich la de BIET ket qua co on dinh hay khong, KHONG
-    PHAI de "chon lan chay dep nhat roi bao cao rieng lan do". Ket qua
-    dung de bao cao trong do an la TRUNG BINH +- STD cua ca ca N seed.
+AN TOAN: moi seed ghi vao THU MUC RIENG, khong ghi de mo hinh va ket qua
+chinh dang dung cho bao cao va ung dung web:
+    data/processed/cv/seed_<s>/pairs/
+    model_artifacts/cv/seed_<s>/
+    results/cv/seed_<s>/tables/ va figures/
 
-Script nay dung subprocess voi sys.executable (chinh python dang chay
-script nay) de goi lai 01b/05/06 - dam bao LUON dung dung venv dang
-kich hoat, tranh loi "nham interpreter" (vd dung python he thong thay
-vi venv) da tung xay ra.
+Co the chay lai neu bi ngat giua chung: seed nao da xong se duoc bo qua.
 
-Mac dinh chay 3 seed (1, 2, 3), MOI SEED CHI TRAIN 1 MODEL SIAMESE
-(khong ensemble 3 model nhu binh thuong) - de tong thoi gian chay
-TUONG DUONG voi 1 lan chay ensemble-3-model truoc day (3 seed x 1
-model = 3 model tong cong, cung tai nguyen tinh toan). Neu muon chinh
-xac hon (nhung lau hon), tang --num_models_per_seed.
-
-Cach dung (khong can tham so, path da khop san, chay tu thu muc src):
+Cach dung:
     cd src
     python 07_cross_validation.py
+    python 07_cross_validation.py --num_models 1     # nhanh hon, bao cao ro la dung 1 mang
 
-CANH BAO THOI GIAN: tong thoi gian xap xi = (thoi gian 1 lan chay day
-du 01b+05+06) x so luong seed. Neu may cham, giam --seeds xuong con 2
-gia tri, hoac giam --siamese_epochs / --max_pos_pairs_per_writer.
-
-Output:
-    results/tables/final_model_comparison_seed{N}.csv  (ket qua rieng tung seed)
-    results/tables/cross_validation_all_seeds.csv       (gop tat ca seed)
-    results/tables/cross_validation_summary.csv         (mean +- std moi model)
-    results/figures/cross_validation_auc_comparison.png (bieu do so sanh)
+Ket qua tong hop:
+    results/tables/cv_all_seeds.csv          (tung seed, tung mo hinh)
+    results/tables/cv_summary.csv            (mean, SD tung chi so)
+    results/tables/cv_target_far_summary.csv (FRR tai FAR muc tieu, mean, SD)
+    results/tables/cv_summary_tables.txt     (bang san sang dua vao bao cao)
 """
 
 import argparse
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import pandas as pd
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SRC_DIR = Path(__file__).resolve().parent
-DEFAULT_TABLES_DIR = PROJECT_ROOT / "results" / "tables"
-DEFAULT_FIGURES_DIR = PROJECT_ROOT / "results" / "figures"
+SRC = Path(__file__).resolve().parent
+ROOT = SRC.parent
+NAMES = {"rf": "Random Forest", "svm": "SVM", "siamese": "Siamese Network", "combined": "Mô hình kết hợp"}
+ORDER = ["rf", "svm", "siamese", "combined"]
 
 
-def run_step(script_name: str, args_list: list, description: str):
-    """
-    Goi lai mot script khac (01b/05/06) bang CHINH python dang chay
-    script nay (sys.executable) - dam bao dung dung venv, khong bao gio
-    bi nham interpreter du nguoi dung dang kich hoat venv nao.
-    """
-    cmd = [sys.executable, str(SRC_DIR / script_name)] + args_list
-    print(f"\n>>> {description}")
-    print(f"    Lenh: {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd=str(SRC_DIR))
-    if result.returncode != 0:
-        raise RuntimeError(f"{script_name} that bai (exit code {result.returncode}). Dung lai tai day.")
+def run(script, args, label):
+    cmd = [sys.executable, str(SRC / script)] + [str(a) for a in args]
+    print(f"\n>>> {label}\n    {' '.join(cmd)}", flush=True)
+    r = subprocess.run(cmd, cwd=str(SRC))
+    if r.returncode != 0:
+        raise RuntimeError(f"{script} that bai (ma loi {r.returncode})")
+
+
+def seed_dirs(seed):
+    return {
+        "pairs": ROOT / "data" / "processed" / "cv" / f"seed_{seed}" / "pairs",
+        "models": ROOT / "model_artifacts" / "cv" / f"seed_{seed}",
+        "tables": ROOT / "results" / "cv" / f"seed_{seed}" / "tables",
+        "figures": ROOT / "results" / "cv" / f"seed_{seed}" / "figures",
+    }
+
+
+def run_seed(seed, args):
+    d = seed_dirs(seed)
+    for p in d.values():
+        p.mkdir(parents=True, exist_ok=True)
+    common = ["--pairs_dir", d["pairs"], "--model_dir", d["models"],
+              "--tables_dir", d["tables"], "--figures_dir", d["figures"]]
+
+    run("01b_generate_pairs.py", [
+        "--seed", seed, "--output_dir", d["pairs"],
+        "--val_writers", args.val_writers, "--test_writers", args.test_writers,
+        "--max_pos_pairs_per_writer", args.max_pos,
+        "--max_skilled_neg_pairs_per_writer", args.max_skilled,
+        "--num_random_neg_pairs_per_writer", args.n_random,
+    ], f"[seed {seed}] Chia nguoi ky va tao cap")
+    run("05_pairwise_baseline.py", common + ["--fixed_params"], f"[seed {seed}] RF, SVM (tham so co dinh)")
+    extra = ["--epochs", args.epochs, "--patience", args.epochs, "--batch_size", 4] if args.epochs else []
+    run("06_siamese_network.py", common + ["--num_models", args.num_models] + extra,
+        f"[seed {seed}] Siamese ({args.num_models} mang)")
+    run("08_combined_model.py", common + ["--fixed_params"], f"[seed {seed}] Mo hinh ket hop (tham so co dinh)")
+    run("10_threshold_analysis.py", common, f"[seed {seed}] EER va FRR tai FAR muc tieu")
+
+
+def collect(seed):
+    t = seed_dirs(seed)["tables"]
+    comp = pd.read_csv(t / "final_model_comparison_with_combined.csv")[["model", "accuracy", "roc_auc", "FAR", "FRR"]]
+    comp = comp.rename(columns={"FAR": "FAR_eer", "FRR": "FRR_eer"})
+    eer = pd.read_csv(t / "eer_test.csv")[["model", "EER_test"]]
+    df = comp.merge(eer, on="model")
+
+    pt_frames = [pd.read_csv(t / f) for f in
+                 ["pairwise_baseline_per_pairtype.csv", "siamese_per_pairtype.csv", "combined_per_pairtype.csv"]
+                 if (t / f).exists()]
+    if pt_frames:
+        pt = pd.concat(pt_frames)
+        for ptype, col in [("skilled_forgery", "FAR_skilled"), ("random_forgery", "FAR_random")]:
+            sub = pt[pt["pair_type"] == ptype][["model", "FAR"]].rename(columns={"FAR": col})
+            df = df.merge(sub, on="model", how="left")
+
+    df["seed"] = seed
+    far = pd.read_csv(t / "threshold_analysis_target_far.csv")
+    far["seed"] = seed
+    return df, far
+
+
+def fmt(m, s, pct=True):
+    if pct:
+        return f"{m*100:.1f} ± {s*100:.1f}".replace(".", ",")
+    return f"{m:.3f} ± {s:.3f}".replace(".", ",")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Danh gia qua nhieu writer-split khac nhau (cross-validation)")
-    parser.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3],
-                         help="Danh sach seed de chia writer khac nhau. Mac dinh: 1 2 3")
-    parser.add_argument("--val_writers", type=int, default=10)
-    parser.add_argument("--test_writers", type=int, default=10)
-    parser.add_argument("--num_models_per_seed", type=int, default=1,
-                         help="So model Siamese train MOI seed (mac dinh 1, khong ensemble, "
-                              "de giu tong thoi gian hop ly khi nhan voi so seed)")
-    parser.add_argument("--max_pos_pairs_per_writer", type=int, default=150)
-    parser.add_argument("--max_skilled_neg_pairs_per_writer", type=int, default=150)
-    parser.add_argument("--num_random_neg_pairs_per_writer", type=int, default=75)
-    parser.add_argument("--siamese_epochs", type=int, default=60)
-    parser.add_argument("--siamese_patience", type=int, default=15)
-    parser.add_argument("--loss", choices=["contrastive", "triplet"], default="triplet")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--seeds", type=int, nargs="+", default=[42, 1, 2, 3, 4])
+    ap.add_argument("--num_models", type=int, default=3,
+                    help="So mang Siamese trong ensemble. 3 = giong cau hinh chinh.")
+    ap.add_argument("--max_pos", type=int, default=150)
+    ap.add_argument("--max_skilled", type=int, default=150)
+    ap.add_argument("--n_random", type=int, default=75)
+    ap.add_argument("--rerun", action="store_true", help="Chay lai ca nhung seed da xong")
+    ap.add_argument("--val_writers", type=int, default=10)
+    ap.add_argument("--test_writers", type=int, default=10)
+    ap.add_argument("--epochs", type=int, default=None, help="Chi dung de chay thu nhanh")
+    args = ap.parse_args()
 
-    tables_dir = Path(DEFAULT_TABLES_DIR)
-    tables_dir.mkdir(parents=True, exist_ok=True)
-    figures_dir = Path(DEFAULT_FIGURES_DIR)
-    figures_dir.mkdir(parents=True, exist_ok=True)
+    for i, seed in enumerate(args.seeds, 1):
+        done = (seed_dirs(seed)["tables"] / "eer_test.csv").exists()
+        print(f"\n{'#' * 64}\n# LAN CHIA {i}/{len(args.seeds)} - seed {seed}" + ("  (da xong, bo qua)" if done and not args.rerun else "") + f"\n{'#' * 64}")
+        if done and not args.rerun:
+            continue
+        run_seed(seed, args)
 
-    all_results = []
-    for seed in args.seeds:
-        print(f"\n{'#'*70}\n# SEED {seed} ({args.seeds.index(seed)+1}/{len(args.seeds)})\n{'#'*70}")
+    rows, fars = zip(*[collect(s) for s in args.seeds])
+    all_df = pd.concat(rows, ignore_index=True)
+    far_df = pd.concat(fars, ignore_index=True)
 
-        run_step("01b_generate_pairs.py", [
-            "--seed", str(seed),
-            "--val_writers", str(args.val_writers),
-            "--test_writers", str(args.test_writers),
-            "--max_pos_pairs_per_writer", str(args.max_pos_pairs_per_writer),
-            "--max_skilled_neg_pairs_per_writer", str(args.max_skilled_neg_pairs_per_writer),
-            "--num_random_neg_pairs_per_writer", str(args.num_random_neg_pairs_per_writer),
-        ], f"[Seed {seed}] Sinh writer split + pairs")
+    out = ROOT / "results" / "tables"
+    out.mkdir(parents=True, exist_ok=True)
+    all_df.to_csv(out / "cv_all_seeds.csv", index=False)
 
-        run_step("05_pairwise_baseline.py", [], f"[Seed {seed}] Train Pairwise RF/SVM baseline")
+    metrics = [c for c in ["accuracy", "roc_auc", "EER_test", "FAR_eer", "FRR_eer", "FAR_skilled", "FAR_random"] if c in all_df]
+    summary = all_df.groupby("model")[metrics].agg(["mean", "std"])
+    summary.to_csv(out / "cv_summary.csv")
 
-        run_step("06_siamese_network.py", [
-            "--num_models", str(args.num_models_per_seed),
-            "--epochs", str(args.siamese_epochs),
-            "--patience", str(args.siamese_patience),
-            "--loss", args.loss,
-        ], f"[Seed {seed}] Train Siamese Network")
+    far_sum = far_df.groupby(["target_FAR", "model"])[["FAR_test", "FRR_test"]].agg(["mean", "std"])
+    far_sum.to_csv(out / "cv_target_far_summary.csv")
 
-        seed_comparison_path = tables_dir / "final_model_comparison.csv"
-        seed_df = pd.read_csv(seed_comparison_path)
-        seed_df["seed"] = seed
-        all_results.append(seed_df)
+    # ---------- Bang san sang dua vao bao cao ----------
+    n = len(args.seeds)
+    lines = [f"Bang: Ket qua trung binh ± do lech chuan qua {n} cach chia nguoi ky"]
+    lines.append("| Mô hình | Accuracy (%) | ROC-AUC | EER (%) | FAR giả có kỹ năng (%) | FAR giả ngẫu nhiên (%) |")
+    lines.append("|---|---|---|---|---|---|")
+    for m in ORDER:
+        if m not in summary.index:
+            continue
+        r = summary.loc[m]
+        cells = [NAMES[m],
+                 fmt(r[("accuracy", "mean")], r[("accuracy", "std")]),
+                 fmt(r[("roc_auc", "mean")], r[("roc_auc", "std")], pct=False),
+                 fmt(r[("EER_test", "mean")], r[("EER_test", "std")])]
+        for c in ["FAR_skilled", "FAR_random"]:
+            cells.append(fmt(r[(c, "mean")], r[(c, "std")]) if (c, "mean") in r.index else "–")
+        lines.append("| " + " | ".join(cells) + " |")
 
-        archived_path = tables_dir / f"final_model_comparison_seed{seed}.csv"
-        shutil.copy(seed_comparison_path, archived_path)
-        print(f"\n>>> Da luu ket qua rieng cua seed {seed}: {archived_path}")
+    lines.append(f"\nBang: FRR (%) tai FAR muc tieu, nguong chon tren validation, trung binh ± do lech chuan qua {n} cach chia")
+    lines.append("| FAR mục tiêu | " + " | ".join(NAMES[m] for m in ORDER) + " |")
+    lines.append("|---|" + "---|" * len(ORDER))
+    for tf in sorted(far_df["target_FAR"].unique()):
+        cells = [f"{tf*100:.0f}%"]
+        for m in ORDER:
+            key = (tf, m)
+            if key in far_sum.index:
+                r = far_sum.loc[key]
+                cells.append(fmt(r[("FRR_test", "mean")], r[("FRR_test", "std")]))
+            else:
+                cells.append("–")
+        lines.append("| " + " | ".join(cells) + " |")
 
-    combined_df = pd.concat(all_results, ignore_index=True)
-    combined_path = tables_dir / "cross_validation_all_seeds.csv"
-    combined_df.to_csv(combined_path, index=False)
+    lines.append(f"\nBang: FAR thuc te (%) tren tap kiem thu tai FAR muc tieu, trung binh ± do lech chuan")
+    lines.append("| FAR mục tiêu | " + " | ".join(NAMES[m] for m in ORDER) + " |")
+    lines.append("|---|" + "---|" * len(ORDER))
+    for tf in sorted(far_df["target_FAR"].unique()):
+        cells = [f"{tf*100:.0f}%"]
+        for m in ORDER:
+            key = (tf, m)
+            cells.append(fmt(far_sum.loc[key][("FAR_test", "mean")], far_sum.loc[key][("FAR_test", "std")]) if key in far_sum.index else "–")
+        lines.append("| " + " | ".join(cells) + " |")
 
-    metrics = ["accuracy", "roc_auc", "FAR", "FRR"]
-    summary = combined_df.groupby("model")[metrics].agg(["mean", "std"])
-    summary_path = tables_dir / "cross_validation_summary.csv"
-    summary.to_csv(summary_path)
+    # Mo hinh nao co FRR thap nhat o tung lan chia (kiem tra ket luan co on dinh khong)
+    lines.append("\nSo lan chia ma moi mo hinh co FRR thap nhat tai tung FAR muc tieu:")
+    for tf in sorted(far_df["target_FAR"].unique()):
+        sub = far_df[far_df["target_FAR"] == tf]
+        counts, ties = {}, 0
+        for _seed, g in sub.groupby("seed"):
+            best = g["FRR_test"].min()
+            w = g[g["FRR_test"] <= best + 1e-9]["model"].tolist()
+            if len(w) > 1:
+                ties += 1
+            for m in w:
+                counts[m] = counts.get(m, 0) + 1
+        txt = ", ".join(f"{NAMES.get(m, m)} {counts[m]}/{n}" for m in ORDER if m in counts)
+        lines.append(f"  FAR {tf*100:.0f}%: {txt}" + (f"  (co {ties} lan chia hoa nhau)" if ties else ""))
 
-    print(f"\n{'='*70}\nTONG HOP KET QUA QUA {len(args.seeds)} WRITER-SPLIT KHAC NHAU\n{'='*70}")
-    print(summary)
-    print(f"\nDa luu bang chi tiet: {combined_path}")
-    print(f"Da luu bang tong hop: {summary_path}")
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-    models = list(combined_df["model"].unique())
-    means = [combined_df[combined_df["model"] == m]["roc_auc"].mean() for m in models]
-    stds = [combined_df[combined_df["model"] == m]["roc_auc"].std() for m in models]
-    ax.bar(models, means, yerr=stds, capsize=8)
-    ax.set_ylabel("ROC-AUC")
-    ax.set_title(f"ROC-AUC trung binh +/- std qua {len(args.seeds)} writer-split khac nhau")
-    ax.set_ylim(0, 1)
-    fig.tight_layout()
-    fig_path = figures_dir / "cross_validation_auc_comparison.png"
-    fig.savefig(fig_path, dpi=150)
-    plt.close(fig)
-    print(f"Da luu bieu do: {fig_path}")
-
-    print(f"\nHoan tat cross-validation qua {len(args.seeds)} seed.")
+    text = "\n".join(lines)
+    print("\n" + "=" * 64 + "\n" + text)
+    (out / "cv_summary_tables.txt").write_text(text, encoding="utf-8")
+    print(f"\nDa luu: {out / 'cv_summary_tables.txt'}")
 
 
 if __name__ == "__main__":

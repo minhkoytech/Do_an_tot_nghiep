@@ -1,9 +1,10 @@
 {
   "model": "combined",
-  "threshold": 0.7388665841371429,
-  "selection": "max_accuracy_on_validation",
-  "accuracy_val": 0.7874666666666666,
-  "accuracy_test": 0.8088,
-  "FAR_test": 0.08622222222222223,
-  "FRR_test": 0.3486666666666667
+  "threshold": 0.6571399190700624,
+  "selection": "target_far_0.10_on_validation",
+  "target_FAR": 0.1,
+  "FAR_val": 0.1,
+  "accuracy_test": 0.8136,
+  "FAR_test": 0.1173333333333333,
+  "FRR_test": 0.29
 }

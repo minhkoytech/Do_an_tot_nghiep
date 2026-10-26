@@ -5,10 +5,10 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104%2B-009688.svg)](https://fastapi.tiangolo.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**Khóa luận tốt nghiệp — Khoa học Dữ liệu**  
+**Khóa luận tốt nghiệp - Khoa học Dữ liệu**  
 Đại học Kinh tế TP. Hồ Chí Minh · Khoa Công nghệ Thông tin và Kinh doanh
 
-Hệ thống xác thực chữ ký viết tay **ngoại tuyến** (offline): nhận hai ảnh chữ ký (mẫu + cần kiểm tra), trả về **khớp / không khớp**. Kết hợp đặc trưng thống kê thủ công với Siamese Network, đánh giá theo hướng **độc lập người ký**.
+Hệ thống xác thực chữ ký viết tay **ngoại tuyến** (offline): Nhận hai ảnh chữ ký (mẫu + cần kiểm tra), trả về **khớp / không khớp**. Kết hợp đặc trưng thống kê thủ công với Siamese Network, đánh giá theo hướng **độc lập người ký**.
 
 **Repository:** [github.com/minhkoytech/Do_an_tot_nghiep](https://github.com/minhkoytech/Do_an_tot_nghiep)
 
@@ -40,10 +40,10 @@ Python · OpenCV · scikit-image · scikit-learn · PyTorch · FastAPI
 | --- | --- |
 | **Bài toán** | Xác thực **cặp** chữ ký (pair-wise), không phân loại từng ảnh riêng lẻ |
 | **Hướng** | Độc lập người ký (writer-independent): người test không xuất hiện khi train |
-| **Dataset chính** | [CEDAR Signature Database](https://www.kaggle.com/datasets/shreelakshmigp/cedardataset) — 55 người, 24 thật + 24 giả/người, 300 dpi |
+| **Dataset chính** | [CEDAR Signature Database](https://www.kaggle.com/datasets/shreelakshmigp/cedardataset) - 55 người, 24 thật + 24 giả/người, 300 dpi |
 | **External test** | ICDAR SigComp 2011 (chữ ký ngoại tuyến người Hà Lan) |
-| **Mô hình** | Random Forest · SVM · Siamese Network (Triplet Loss, ensemble 3) · **Mô hình kết hợp** |
-| **Chỉ số** | Accuracy, FAR, FRR, EER, ROC-AUC — theo loại giả mạo, theo người ký, nhiều lần chia |
+| **Mô hình** | Random Forest - SVM - Siamese Network (Triplet Loss, ensemble 3) - **Mô hình kết hợp** |
+| **Chỉ số** | Accuracy, FAR, FRR, EER, ROC-AUC - theo loại giả mạo, theo người ký, nhiều lần chia |
 
 ---
 
@@ -59,7 +59,7 @@ Trung bình ± độ lệch chuẩn qua **5 cách chia người ký** trên CEDA
 | **Mô hình kết hợp** | **79,4 ± 2,0** | **0,878 ± 0,025** | **20,2 ± 2,1** | **28,2 ± 6,1** | **3,0 ± 2,5** |
 
 Tại **FAR mục tiêu 10%**: mô hình kết hợp có FRR trung bình ~30%, thấp hơn RF/SVM (~38%).  
-Giả mạo có kỹ năng vẫn là điểm nghẽn (FAR ~27–37%); giả mạo ngẫu nhiên đã kiểm soát tốt (FAR < 5%).
+Giả mạo có kỹ năng vẫn là điểm nghẽn (FAR ~27-37%); giả mạo ngẫu nhiên đã kiểm soát tốt (FAR < 5%).
 
 Trên **ICDAR SigComp 2011** (không fine-tune): accuracy ~74,6–76,4%.
 
@@ -74,7 +74,7 @@ Do_an_tot_nghiep/
 ├── data/
 │   ├── raw/
 │   │   ├── cedar/                 # full_org/ + full_forg/ (ảnh gốc, thường không commit)
-│   │   └── icdar/                 # ICDAR — chỉ external test
+│   │   └── icdar/                 # ICDAR - chỉ external test
 │   └── processed/                 # ảnh sạch, labels, features, cặp
 ├── src/                           # Pipeline nghiên cứu (chạy tuần tự)
 │   ├── 01_preprocessing.py
@@ -104,7 +104,7 @@ Do_an_tot_nghiep/
 └── README.md
 ```
 
-**Backend** import trực tiếp logic từ `src/` (`01_preprocessing`, `03_features`, `06_siamese_network`, `08_combined_model`, …) để inference giống hệt lúc train. Frontend được serve từ cùng process FastAPI → một domain, tránh CORS.
+**Backend** import trực tiếp logic từ `src/` (`01_preprocessing`, `03_features`, `06_siamese_network`, `08_combined_model`, …) để inference giống hệt lúc train. Frontend được serve từ cùng process FastAPI -> một domain, tránh CORS.
 
 ---
 
@@ -146,7 +146,7 @@ data/raw/cedar/
 
 ### ICDAR SigComp 2011 (tùy chọn — external test)
 
-- Phần ngoại tuyến người Hà Lan → `data/raw/icdar/`.
+- Phần ngoại tuyến người Hà Lan -> `data/raw/icdar/`.
 - **Không** tham gia train / chọn ngưỡng.
 
 ### Model đã train
@@ -221,13 +221,13 @@ Mô hình ra quyết định mặc định lấy từ `model_artifacts/decision_
 
 | Bước | Kỹ thuật |
 | --- | --- |
-| Tiền xử lý | Xám → kiểm tra/đảo nền → Otsu → khử nhiễu → crop → **220×155** |
-| Sinh cặp | Thật–thật, thật–giả kỹ năng, thật–người khác (độc lập người ký) |
-| Đặc trưng | Hình học, Hu Moments, GLCM → chọn đặc trưng có ý nghĩa ở **mức cặp** |
+| Tiền xử lý | Xám → kiểm tra/đảo nền -> Otsu -> khử nhiễu -> crop -> **220×155** |
+| Sinh cặp | Thật-thật, thật-giả kỹ năng, thật-người khác (độc lập người ký) |
+| Đặc trưng | Hình học, Hu Moments, GLCM -> chọn đặc trưng có ý nghĩa ở **mức cặp** |
 | Baseline | RF / SVM trên vector Δ đặc trưng (`05_pairwise_baseline.py`) |
 | Siamese | CNN + Triplet Loss, ensemble 3 mạng (`06_siamese_network.py`) |
-| Kết hợp | Δ đặc trưng + Δ embedding → RF (`08_combined_model.py`) |
-| Ngưỡng | EER · FAR mục tiêu · tối ưu accuracy (`10_`, `11_`, `14_`) |
+| Kết hợp | Δ đặc trưng + Δ embedding -> RF (`08_combined_model.py`) |
+| Ngưỡng | EER - FAR mục tiêu - tối ưu accuracy (`10_`, `11_`, `14_`) |
 | Giải thích | Grad-CAM (`09_error_analysis_gradcam.py`) |
 
 ---
@@ -240,7 +240,7 @@ Chỉ dùng làm **external test** (`12_external_test_icdar.py`). Mô hình và 
 
 ## Hạn chế & hướng phát triển
 
-- Chỉ ~35 người ký train → trần ROC-AUC ~0,88–0,90; FAR giả kỹ năng còn cao.
+- Chỉ ~35 người ký train -> trần ROC-AUC ~0,88–0,90; FAR giả kỹ năng còn cao.
 - So sánh với một chữ ký mẫu mỗi lần.
 - Ảnh quét sạch; chưa xử lý ảnh điện thoại, dòng kẻ, con dấu.
 - Ưu tiên tiếp: nhiều mẫu/người; pretrain bộ lớn (GPDS); ngưỡng theo khách hàng; tiền xử lý ảnh thực tế.
@@ -252,7 +252,7 @@ Chỉ dùng làm **external test** (`12_external_test_icdar.py`). Mô hình và 
 ```text
 Nông Minh Khôi (2026). Xây dựng hệ thống xác thực chữ ký viết tay
 dựa trên kết hợp đặc trưng thống kê và học sâu, ứng dụng trong
-phòng chống gian lận tài chính – ngân hàng.
+phòng chống gian lận tài chính - ngân hàng.
 Khóa luận tốt nghiệp, Đại học Kinh tế TP. Hồ Chí Minh.
 Giảng viên hướng dẫn: TS. Nguyễn Đăng Cao.
 ```
